@@ -39,6 +39,7 @@ fn select_default_model(state: &AppState) {
     let gpu = settings.prefer_gpu && asr::GPU_COMPILED;
     if let Some(id) = models::recommend(&installed, |id| models::reference_p50_ms(id, gpu)) {
         settings.selected_speech_model_id = Some(id.to_string());
+        let _ = state.save_settings(&settings);
     }
 }
 
@@ -47,9 +48,12 @@ pub fn run() {
         .setup(|app| {
             let model_dir = app.path().app_local_data_dir()?.join("models");
             std::fs::create_dir_all(&model_dir)?;
-            app.manage(AppState::new(model_dir, platform_inserter()));
+            let db_path = app.path().app_data_dir().ok().map(|d| d.join("voxelle.db"));
+            app.manage(AppState::new(model_dir, platform_inserter(), db_path));
             let state = app.state::<AppState>();
             select_default_model(&state);
+            state.apply_retention();
+            dictation::preload_selected_model(app.handle());
             let bindings = hotkeys::Bindings::from_settings(&state.settings.lock().unwrap())
                 .unwrap_or_default();
             if let Err(e) = overlay::create(app.handle()) {
@@ -80,6 +84,8 @@ pub fn run() {
             commands::copy_text,
             commands::set_history_edit,
             commands::get_model_dir,
+            commands::export_history,
+            commands::storage_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Voxelle");

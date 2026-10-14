@@ -1,6 +1,9 @@
-//! Settings + history types. P0 persists these in SQLite (migrations, parameterized queries) in
-//! the storage slice. For now they live in memory in AppState so the UI is exercised end-to-end;
-//! the raw transcript is always kept separate from any AI-edited text.
+//! Settings + history types and their SQLite persistence (`db`). The raw transcript is always kept
+//! separate from any edited text.
+
+pub mod db;
+
+pub use db::Store;
 
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +41,7 @@ impl Default for Settings {
             input_device_id: None,
             model_dir: None,
             selected_speech_model_id: None,
-            toggle_hotkey: "CommandOrControl+Shift+Space".into(),
+            toggle_hotkey: "Ctrl+Shift+Space".into(),
             push_to_talk_hotkey: Some("RightCtrl".into()),
             cancel_hotkey: Some("Escape".into()),
             offline_mode: true, // offline by default

@@ -55,6 +55,12 @@ export function History() {
                     Clear history…
                   </button>
                 )}
+                <button
+                  className="btn btn--ghost"
+                  onClick={() => core.exportHistory().then((p) => setNote(`Exported to ${p}`), (e) => setNote(errorText(e)))}
+                >
+                  Export (JSON)
+                </button>
               </div>
               {entries.map((e) => (
                 <div className="card" key={e.id}>

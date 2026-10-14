@@ -11,6 +11,7 @@ import type {
   ModelInfo,
   SessionSnapshot,
   Settings,
+  StorageInfo,
 } from "./types";
 
 export class CoreNotConnected extends Error {
@@ -66,7 +67,9 @@ export const core = {
 
   getHistory: () => call<HistoryEntry[]>("get_history"),
   deleteHistoryEntry: (id: string) => call<void>("delete_history_entry", { id }),
-  clearHistory: () => call<void>("clear_history"),
+  clearHistory: () => call<number>("clear_history"),
+  exportHistory: () => call<string>("export_history"),
+  storageInfo: () => call<StorageInfo>("storage_info"),
 
   listInputDevices: () => call<InputDevice[]>("list_input_devices"),
   copyText: (text: string) => call<void>("copy_text", { text }),

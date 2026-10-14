@@ -94,7 +94,7 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
   return (
     <>
       {error && <div className="notice notice--error">Not saved: {error}</div>}
-      {saved && !error && <p className="muted small">Saved. (Settings persist across restarts once storage lands — see feature status.)</p>}
+      {saved && !error && <p className="muted small">Saved.</p>}
 
       <div className="card">
         <strong>Shortcuts</strong>
@@ -161,7 +161,19 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
             onChange={(e) => save({ storeTranscripts: e.target.checked })}
           />
         </Field>
-        <Planned label="Retention period" hint="Auto-delete history after N days" />
+        <Field label="Delete history automatically" hint="Older entries are removed on startup and after each dictation">
+          <select
+            className="input"
+            value={s.retentionDays == null ? "" : String(s.retentionDays)}
+            onChange={(e) => save({ retentionDays: e.target.value === "" ? null : Number(e.target.value) })}
+          >
+            <option value="">Never</option>
+            <option value="1">After 1 day</option>
+            <option value="7">After 7 days</option>
+            <option value="30">After 30 days</option>
+            <option value="90">After 90 days</option>
+          </select>
+        </Field>
         <Field label="Offline mode" hint="Blocks all optional network access">
           <input type="checkbox" checked={s.offlineMode} disabled title="Always on in this version" />
         </Field>

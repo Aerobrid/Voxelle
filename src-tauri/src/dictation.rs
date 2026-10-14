@@ -214,10 +214,12 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
     if transcribed.is_ok() {
         if let Some(id) = model_id.as_deref() {
             // "Measured speed on this machine" for the model manager comes from real dictations.
-            let mut facts = st.model_facts.lock().unwrap();
-            let f = facts.entry(id.into()).or_default();
-            f.measured_rtf = Some(metrics.real_time_factor);
-            f.measured_backend = Some(if metrics.gpu { "GPU (Vulkan)" } else { "CPU" }.into());
+            let backend = if metrics.gpu { "GPU (Vulkan)" } else { "CPU" };
+            let rtf = metrics.real_time_factor;
+            st.update_facts(id, |f| {
+                f.measured_rtf = Some(rtf);
+                f.measured_backend = Some(backend.into());
+            });
         }
     }
 
@@ -246,13 +248,14 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
 
     // Persist the RAW transcript (never overwritten by AI output) unless storage is disabled.
     let history_id = store.then(|| {
+        // Unique across restarts: time-based plus a per-run counter.
         let id = format!(
-            "h{}",
+            "h{}-{}",
+            chrono::Utc::now().timestamp_micros(),
             st.id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
-        st.history.lock().unwrap().insert(
-            0,
-            HistoryEntry {
+        let saved = st.store.insert_history(
+            &HistoryEntry {
                 id: id.clone(),
                 created_at: chrono::Utc::now().to_rfc3339(),
                 raw_transcript: transcription.text.clone(),
@@ -261,8 +264,15 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
                 language: transcription.language.clone(),
             },
         );
-        id
-    });
+        st.apply_retention();
+        match saved {
+            Ok(()) => Some(id),
+            Err(e) => {
+                eprintln!("[voxelle] could not save history: {e}");
+                None
+            }
+        }
+    }).flatten();
 
     let sanitized = sanitize_for_insertion(&transcription.text);
     let insert = st.inserter.lock().unwrap().insert(&sanitized);
@@ -344,7 +354,7 @@ pub fn ensure_model_loaded(
         }
         match models::verify_file(&path, entry.size_bytes, entry.sha256).map_err(|e| e.to_string())? {
             Verify::Ok => {
-                st.model_facts.lock().unwrap().entry(id.into()).or_default().integrity_verified = true;
+                st.update_facts(id, |f| f.integrity_verified = true);
             }
             other => {
                 return Err(format!(
@@ -359,4 +369,34 @@ pub fn ensure_model_loaded(
         threads: crate::asr::default_threads(),
     };
     asr.load(&path, &opts).map_err(|e| e.to_string())
+}
+
+/// Load (and warm up) the selected model in the background so the first dictation doesn't pay for
+/// model load and GPU pipeline setup (~1-2 s on the dev machine). Safe to call repeatedly.
+pub fn preload_selected_model(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let st = state(&app);
+        let (model_id, use_gpu) = {
+            let s = st.settings.lock().unwrap();
+            (s.selected_speech_model_id.clone(), s.prefer_gpu)
+        };
+        if model_id.is_none() {
+            return;
+        }
+        let t = Instant::now();
+        let mut asr = st.asr.lock().unwrap();
+        match ensure_model_loaded(&st, asr.as_mut(), model_id.as_deref(), use_gpu) {
+            Ok(()) => {
+                // One short pass compiles GPU pipelines / touches weights. Low-level tone, not
+                // silence, so whisper does not spend time in its temperature-fallback retries.
+                let warm: Vec<f32> = (0..ASR_SAMPLE_RATE as usize)
+                    .map(|i| 0.01 * (i as f32 * 0.07).sin())
+                    .collect();
+                let _ = asr.transcribe(&warm, Some("en"), &crate::asr::CancelToken::default());
+                eprintln!("[voxelle] model ready in {} ms (gpu: {})", t.elapsed().as_millis(), asr.capabilities().gpu_active);
+            }
+            Err(e) => eprintln!("[voxelle] model preload failed: {e}"),
+        }
+    });
 }

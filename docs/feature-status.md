@@ -5,19 +5,20 @@ Status vocabulary (principles.md #8): **implemented** · **experimental** · **p
 observed working by a command that was run. "experimental" = code + unit tests exist, not yet
 observed end-to-end in the running app.
 
-_Last updated: 2026-10-14 (session 2 — toolchain unblocked; audio, ASR, model checks, Windows
-insertion, hotkeys, overlay, UI controls written; ASR benchmarked; E2E app run pending)._
+_Last updated: 2026-10-14 (session 2 — audio, ASR (Vulkan), model checks, Windows insertion,
+hotkeys, overlay, SQLite storage, UI controls; benchmarks + insertion/mic probes run. Real-voice
+E2E from another app not yet run)._
 
 ## P0 — Reliable desktop dictation
 | Area | Feature | Status | Evidence / notes |
 |---|---|---|---|
 | 0.1 | State machine idle→recording→processing→inserting→completed/cancelled/failed | implemented | 10 state + 4 session tests pass (`cargo test`), session generation guards stale results |
-| 0.1 | Mic capture (cpal), downmix, resample to 16 kHz | experimental | DSP unit-tested (resampler freq/amplitude/alias/DC tests); live mic not yet run in app |
+| 0.1 | Mic capture (cpal), downmix, resample to 16 kHz | implemented | `mic_probe`: real BT headset captured 3.0 s  kHz, mic released after stop; DSP unit-tested. Mic start latency 696 ms on this Bluetooth headset
 | 0.1 | Input device selection + level meter | experimental | `list_input_devices`, Settings dropdown, 20 Hz level events; not yet observed |
 | 0.1 | Device-disconnect recovery | experimental | cpal error → `disconnected` flag → session Failed + mic released; not exercised |
 | 0.1 | Global toggle / push-to-talk / cancel (Windows) | experimental | WH_KEYBOARD_LL hook + pure matcher (11 tests); not yet exercised in the app |
-| 0.1 | Recording indicator overlay | experimental | non-focusable click-through window; label/bar logic tested (3 tests); not yet observed |
-| 0.1 | Mic released on stop/cancel/error/exit | experimental | worker thread drops stream; `Drop` on exit; not yet observed |
+| 0.1 | Recording indicator overlay | experimental | window verified created hidden with WS_EX_NOACTIVATE + WS_EX_TRANSPARENT (click-through) + topmost; showing during a session not yet observed
+| 0.1 | Mic released on stop/cancel/error/exit | experimental | stop verified (`mic_probe`: is_capturing=false); cancel/error/exit paths not yet observed
 | 0.1 | Clear mic-permission error | experimental | cpal PermissionDenied → message; not exercised |
 | 0.2 | whisper.cpp ASR behind `SpeechBackend` | implemented | `tests/asr_model.rs` transcribes corpus clip (WER ≤ 15%), 12-clip bench WER 2.0% |
 | 0.2 | CPU inference | implemented | bench: base p50 1.77 s / clip (after the /O2 build fix) |
@@ -26,16 +27,16 @@ insertion, hotkeys, overlay, UI controls written; ASR benchmarked; E2E app run p
 | 0.2 | Missing / corrupt model → clear error, no crash | implemented | 2 unit tests (missing file, garbage file) |
 | 0.2 | Model catalog, pinned SHA-256, GGML magic check, verify, select | implemented (core) | 6 model tests; 4 downloaded models matched pinned hashes |
 | 0.2 | In-app model download with consent | planned | Not built yet; Model Manager says so and shows the folder + file name |
-| 0.2 | Default model per machine + latency target | experimental | `recommend()` tested; uses reference measurements until per-machine first-run benchmark exists |
+| 0.2 | Default model per machine + latency target | experimental | first run auto-selected large-v3-turbo (GPU build) via tested `recommend()`; preload at startup: 2.2 s to ready (36 s first time = one-time hash in debug build). Per-machine first-run benchmark still to do
 | 0.2 | Measured speed shown per model | experimental | recorded from real dictations into Model Manager; not yet observed |
 | 0.2 | Non-speech hallucination guard | implemented | energy gate (-45 dBFS) tested; whisper alone outputs "you" on noise (test documents it) |
-| 0.3 | Insertion ladder: type → paste → copy-only (Windows) | experimental | strategy rules 8 tests; real clipboard save/restore test passed (`--ignored`); typing not yet observed in another app |
+| 0.3 | Insertion ladder: type → paste → copy-only (Windows) | implemented (with known false positive) | `insert-probe.ps1` 19/20 exact (typed ASCII 5/5, Unicode+emoji 5/5, long paste 4/5, multi-line paste 5/5), user clipboard restored. 1 paste reported "inserted" without arriving → add UI Automation verification
 | 0.3 | Result states inserted / copied-only / failed | implemented (logic) | never "inserted" for copy paths (tests) |
 | 0.3 | Elevated / terminal / remote-desktop / no-focus handling | experimental | detection code + tests for rules; not exercised against real elevated app |
-| 0.4 | Settings UI (shortcuts, mic, language, GPU, history on/off) | experimental | editable + validated in core; **in memory only** until SQLite |
-| 0.4 | History copy / correct / delete / clear; raw kept separate from edits | experimental | UI + commands written; **in memory only** |
-| 0.4 | Punctuation / capitalization / filler removal / retention controls | planned | labeled "planned" in Settings |
-| 0.4 | SQLite persistence (settings, history, migrations, export) | planned | next slice |
+| 0.4 | Settings UI (shortcuts, mic, language, GPU, history on/off, retention) | experimental | editable + validated; persisted in SQLite (tests); not yet clicked through in the app
+| 0.4 | History copy / correct / delete / clear / export; raw kept separate from edits | experimental | SQLite store, trigger makes raw_transcript immutable (tested); export to Downloads as JSON; UI not yet clicked through
+| 0.4 | Punctuation / capitalization / filler removal | planned | labeled "planned" in Settings
+| 0.4 | SQLite persistence (settings, history, model facts, migrations, retention) | implemented | 9 storage tests incl. reopen-from-file, migration refusal of newer schema, SQL-injection text stored verbatim; DB created on real app start
 | DoD | End-to-end offline loop from another app, measured | planned | needs app run with mic + hotkey; see manual-tests.md |
 
 ### ASR benchmark (2026-10-14, `scripts/bench-asr.ps1`, 12 TTS clips 3.9–5.5 s, en)

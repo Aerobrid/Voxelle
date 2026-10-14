@@ -114,3 +114,10 @@ export interface Settings {
   cancelHotkey: string | null;
   offlineMode: boolean; // true = block all optional network
 }
+
+export interface StorageInfo {
+  /** false = database could not be opened; nothing is written to disk this session. */
+  persistent: boolean;
+  dataDir: string;
+  modelDir: string;
+}

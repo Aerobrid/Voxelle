@@ -32,7 +32,7 @@ Status legend: **planned** = intended, not yet added to a manifest · **added** 
 | sha2 | 0.11.1 | SHA-256 model integrity verification | MIT OR Apache-2.0 | added, verified |
 | windows-sys (Windows only) | 0.61.2 | SendInput, clipboard, LL keyboard hook, token elevation | MIT OR Apache-2.0 | added, verified; already in tree via Tauri (no new code compiled) |
 | hound (dev-dependency) | 3.5.1 | Read WAV corpus in the ASR benchmark tool only | Apache-2.0 | added (dev only, not shipped) |
-| rusqlite (bundled) | — | SQLite storage, migrations, params | MIT | planned (storage slice) |
+| rusqlite (feature `bundled`, builds libsqlite3-sys) | 0.40.2 | SQLite storage: settings, history, model facts; migrations; parameterized queries | MIT (rusqlite, libsqlite3-sys); SQLite itself public domain | added, verified 2026-10-14 |
 
 Rejected/not used: `rdev`, `enigo`, `arboard`, `tauri-plugin-global-shortcut` — the Windows
 adapters are ~400 lines over `windows-sys`, which was already a transitive dependency; this gives
