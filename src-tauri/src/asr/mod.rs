@@ -1,70 +1,135 @@
 //! Speech-recognition boundary. Engine-agnostic so whisper.cpp is just the first backend
-//! (P0 §0.2). The whisper-rs implementation lands in the ASR slice; the null backend reports
-//! honestly that no model is loaded rather than inventing a transcript.
+//! (P0 §0.2). Backends receive 16 kHz mono f32 and never touch the network or any tool.
 
+pub mod wer;
+mod whisper;
+
+pub use whisper::{default_threads, WhisperBackend, GPU_COMPILED};
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AsrError {
-    #[error("no speech model loaded")]
+    #[error("no speech model loaded — install or select a model in Model Manager")]
     NoModel,
-    #[error("asr backend not available: {0}")]
-    Unavailable(String),
+    #[error("failed to load speech model: {0}")]
+    LoadFailed(String),
     #[error("transcription cancelled")]
     Cancelled,
     #[error("asr failure: {0}")]
     Failed(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Capabilities {
-    pub gpu: bool,
+    /// GPU acceleration compiled into this build (e.g. Vulkan).
+    pub gpu_compiled: bool,
+    /// GPU is actually in use for the loaded model (false after a CPU fallback).
+    pub gpu_active: bool,
     pub streaming: bool,
-    pub languages: Vec<String>,
+    pub multilingual: bool,
 }
 
-/// load → transcribe → cancel → unload, plus capabilities. Implementations run off the UI thread.
+#[derive(Debug, Clone)]
+pub struct LoadOptions {
+    pub use_gpu: bool,
+    pub threads: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Transcription {
+    pub text: String,
+    /// Language the model used (detected when the request was "auto").
+    pub language: Option<String>,
+}
+
+/// Shared cancel flag. Cloned into the backend's abort hook so cancel never needs the backend lock.
+#[derive(Debug, Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+    pub fn reset(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+    /// Raw pointer to the flag for native abort hooks. Valid while any clone of the token lives.
+    pub(crate) fn flag_ptr(&self) -> *const AtomicBool {
+        Arc::as_ptr(&self.0)
+    }
+}
+
+/// load → transcribe (cancellable via token) → unload, plus capabilities.
+/// Implementations are called from worker threads, never the UI thread.
 pub trait SpeechBackend: Send {
-    fn load(&mut self, model_path: &str) -> Result<(), AsrError>;
+    fn load(&mut self, model_path: &std::path::Path, opts: &LoadOptions) -> Result<(), AsrError>;
     fn transcribe(
         &mut self,
-        pcm: &[f32],
-        sample_rate: u32,
+        pcm_16k: &[f32],
         language: Option<&str>,
-    ) -> Result<String, AsrError>;
-    fn cancel(&mut self);
+        cancel: &CancelToken,
+    ) -> Result<Transcription, AsrError>;
     fn unload(&mut self);
     fn capabilities(&self) -> Capabilities;
-    fn is_loaded(&self) -> bool;
+    /// Path of the loaded model, if any.
+    fn loaded_model(&self) -> Option<&std::path::Path>;
 }
 
-/// No model loaded. Every call errors honestly.
-pub struct NullSpeechBackend;
+/// Drop whole segments that are only a non-speech annotation (e.g. "[BLANK_AUDIO]", "(music)"),
+/// which whisper emits on silence, then join and tidy whitespace.
+pub fn join_segments<'a>(segments: impl IntoIterator<Item = &'a str>) -> String {
+    let kept: Vec<&str> = segments
+        .into_iter()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !is_annotation(s))
+        .collect();
+    kept.join(" ").split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
-impl SpeechBackend for NullSpeechBackend {
-    fn load(&mut self, _model_path: &str) -> Result<(), AsrError> {
-        Err(AsrError::Unavailable(
-            "whisper backend not yet wired (P0 asr slice)".into(),
-        ))
+fn is_annotation(s: &str) -> bool {
+    let wrapped = |open: char, close: char| s.starts_with(open) && s.ends_with(close);
+    (wrapped('[', ']') || wrapped('(', ')') || wrapped('*', '*')) && !s[1..s.len() - 1].contains(['[', '(', ']', ')'])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn joins_and_normalizes_whitespace() {
+        assert_eq!(join_segments([" Hello there.", "  How are  you?"]), "Hello there. How are you?");
     }
-    fn transcribe(
-        &mut self,
-        _pcm: &[f32],
-        _sample_rate: u32,
-        _language: Option<&str>,
-    ) -> Result<String, AsrError> {
-        Err(AsrError::NoModel)
+
+    #[test]
+    fn drops_non_speech_annotations() {
+        assert_eq!(join_segments(["[BLANK_AUDIO]"]), "");
+        assert_eq!(join_segments([" (music)", " Okay."]), "Okay.");
+        assert_eq!(join_segments(["*silence*"]), "");
     }
-    fn cancel(&mut self) {}
-    fn unload(&mut self) {}
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            gpu: false,
-            streaming: false,
-            languages: vec![],
-        }
+
+    #[test]
+    fn keeps_speech_containing_brackets() {
+        assert_eq!(join_segments(["Use [brackets] here."]), "Use [brackets] here.");
+        assert_eq!(join_segments(["(a) first, (b) second"]), "(a) first, (b) second");
     }
-    fn is_loaded(&self) -> bool {
-        false
+
+    #[test]
+    fn cancel_token_round_trip() {
+        let t = CancelToken::default();
+        let clone = t.clone();
+        assert!(!clone.is_cancelled());
+        t.cancel();
+        assert!(clone.is_cancelled());
+        t.reset();
+        assert!(!clone.is_cancelled());
     }
 }

@@ -14,6 +14,8 @@ pub struct SessionSnapshot {
     pub level: f32,
     pub message: Option<String>,
     pub elapsed_ms: u64,
+    /// Which session this snapshot belongs to (increments on every start).
+    pub generation: u64,
 }
 
 impl Default for SessionSnapshot {
@@ -23,6 +25,7 @@ impl Default for SessionSnapshot {
             level: 0.0,
             message: None,
             elapsed_ms: 0,
+            generation: 0,
         }
     }
 }
@@ -32,21 +35,32 @@ impl Default for SessionSnapshot {
 /// starting a fresh recording.
 pub struct Session {
     snapshot: SessionSnapshot,
+    /// Incremented on every Start, so late results from an older (cancelled) session can be
+    /// recognized and discarded instead of acting on the new one.
+    generation: u64,
 }
 
 impl Session {
     pub fn new() -> Self {
         Self {
             snapshot: SessionSnapshot::default(),
+            generation: 0,
         }
     }
 
     pub fn snapshot(&self) -> SessionSnapshot {
-        self.snapshot.clone()
+        SessionSnapshot {
+            generation: self.generation,
+            ..self.snapshot.clone()
+        }
     }
 
     pub fn state(&self) -> SessionState {
         self.snapshot.state
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Apply an event. Returns the new snapshot or a TransitionError (which the caller surfaces;
@@ -54,12 +68,15 @@ impl Session {
     pub fn apply(&mut self, event: Event) -> Result<SessionSnapshot, TransitionError> {
         let next = self.snapshot.state.next(event)?;
         self.snapshot.state = next;
+        if event == Event::Start {
+            self.generation += 1;
+        }
         if matches!(next, SessionState::Idle | SessionState::Recording) {
             self.snapshot.message = None;
             self.snapshot.level = 0.0;
             self.snapshot.elapsed_ms = 0;
         }
-        Ok(self.snapshot.clone())
+        Ok(self.snapshot())
     }
 
     pub fn set_message(&mut self, msg: impl Into<String>) {
@@ -110,5 +127,19 @@ mod tests {
         assert_eq!(snap.level, 0.0);
         assert_eq!(snap.elapsed_ms, 0);
         assert!(snap.message.is_none());
+    }
+
+    #[test]
+    fn generation_advances_only_on_start() {
+        let mut s = Session::new();
+        assert_eq!(s.generation(), 0);
+        s.apply(Event::Start).unwrap();
+        s.apply(Event::Stop).unwrap();
+        assert_eq!(s.generation(), 1);
+        s.apply(Event::Cancel).unwrap();
+        s.apply(Event::Start).unwrap();
+        assert_eq!(s.generation(), 2);
+        assert!(s.apply(Event::Start).is_err());
+        assert_eq!(s.generation(), 2, "rejected start must not advance");
     }
 }

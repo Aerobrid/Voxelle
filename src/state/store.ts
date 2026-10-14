@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionSnapshot } from "../ipc/types";
+import type { DictationResult, SessionSnapshot } from "../ipc/types";
 import { isTauri } from "../ipc/bridge";
 
 export type SectionId =
@@ -32,12 +32,15 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "audio-import", label: "Audio Import", planned: true },
 ];
 
-const IDLE: SessionSnapshot = { state: "idle", level: 0, message: null, elapsedMs: 0 };
+const IDLE: SessionSnapshot = { state: "idle", level: 0, message: null, elapsedMs: 0, generation: 0 };
 
 interface AppState {
   section: SectionId;
   coreConnected: boolean;
   snapshot: SessionSnapshot;
+  /** Most recent finished dictation (shown on the dashboard for correction). */
+  lastResult: DictationResult | null;
+  setLastResult: (r: DictationResult) => void;
   setSection: (s: SectionId) => void;
   setSnapshot: (s: SessionSnapshot) => void;
 }
@@ -46,6 +49,8 @@ export const useAppStore = create<AppState>((set) => ({
   section: "dashboard",
   coreConnected: isTauri(),
   snapshot: IDLE,
+  lastResult: null,
+  setLastResult: (lastResult) => set({ lastResult }),
   setSection: (section) => set({ section }),
   setSnapshot: (snapshot) => set({ snapshot }),
 }));

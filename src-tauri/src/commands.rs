@@ -1,21 +1,22 @@
 //! Tauri IPC command layer. The renderer calls only these validated commands (no direct OS access).
-//! The full dictation flow is wired here; with stub backends it fails honestly at the first
-//! unwired step (audio/ASR) — it never fabricates a transcript or a false "inserted".
+//! Anything that can block (mic open, transcription, hashing) runs on a blocking worker thread.
 
-use std::sync::atomic::Ordering;
-
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use crate::app_state::AppState;
-use crate::insert::{sanitize_for_insertion, InsertOutcome, InsertResult};
-use crate::models::ModelInfo;
-use crate::session::{Event, SessionSnapshot};
+use crate::asr::Capabilities;
+use crate::audio::InputDevice;
+use crate::dictation::{self, DictationResult};
+use crate::models::{self, catalog_entry, ModelInfo, Verify};
+use crate::session::SessionSnapshot;
 use crate::storage::{HistoryEntry, Settings};
 
-const SESSION_EVENT: &str = "session_update";
-
-fn emit(app: &AppHandle, snap: &SessionSnapshot) {
-    let _ = app.emit(SESSION_EVENT, snap.clone());
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("worker failed: {e}"))?
 }
 
 #[tauri::command]
@@ -24,116 +25,18 @@ pub fn get_session_snapshot(state: State<AppState>) -> SessionSnapshot {
 }
 
 #[tauri::command]
-pub fn start_dictation(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let mut session = state.session.lock().unwrap();
-    // Enforce idle/terminal -> recording. Rejects a second concurrent session.
-    session.apply(Event::Start).map_err(|e| e.to_string())?;
-    emit(&app, &session.snapshot());
-
-    let mut audio = state.audio.lock().unwrap();
-    match audio.start(None) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            audio.abort(); // release the mic on failure
-            let _ = session.apply(Event::DeviceError);
-            session.set_message(e.to_string());
-            emit(&app, &session.snapshot());
-            Err(e.to_string())
-        }
-    }
+pub async fn start_dictation(app: AppHandle) -> Result<(), String> {
+    blocking(move || dictation::start(&app)).await
 }
 
 #[tauri::command]
-pub fn stop_dictation(app: AppHandle, state: State<AppState>) -> Result<InsertResult, String> {
-    let mut session = state.session.lock().unwrap();
-    session.apply(Event::Stop).map_err(|e| e.to_string())?; // -> processing
-    emit(&app, &session.snapshot());
-
-    // Collect captured audio (also releases the device).
-    let captured = state.audio.lock().unwrap().stop();
-    let captured = match captured {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = session.apply(Event::AsrError);
-            session.set_message(format!("audio: {e}"));
-            emit(&app, &session.snapshot());
-            return Err(e.to_string());
-        }
-    };
-
-    // Transcribe locally — no network, no tools (security.md §1).
-    let language = {
-        let s = state.settings.lock().unwrap();
-        if s.language == "auto" {
-            None
-        } else {
-            Some(s.language.clone())
-        }
-    };
-    let transcript = state.asr.lock().unwrap().transcribe(
-        &captured.pcm,
-        captured.sample_rate,
-        language.as_deref(),
-    );
-    let transcript = match transcript {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = session.apply(Event::AsrError);
-            session.set_message(e.to_string());
-            emit(&app, &session.snapshot());
-            return Err(e.to_string());
-        }
-    };
-
-    session
-        .apply(Event::TranscriptReady)
-        .map_err(|e| e.to_string())?; // -> inserting
-    emit(&app, &session.snapshot());
-
-    // Persist the RAW transcript (never overwritten by AI output), if storage is enabled.
-    {
-        let settings = state.settings.lock().unwrap();
-        if settings.store_transcripts {
-            let n = state.id_counter.fetch_add(1, Ordering::Relaxed);
-            let entry = HistoryEntry {
-                id: format!("h{n}"),
-                created_at: chrono::Utc::now().to_rfc3339(),
-                raw_transcript: transcript.clone(),
-                edited_text: None,
-                duration_ms: (captured.pcm.len() as u64 * 1000)
-                    / (captured.sample_rate.max(1) as u64),
-                language: language.clone(),
-            };
-            state.history.lock().unwrap().insert(0, entry);
-        }
-    }
-
-    // Insert at the cursor. Sanitized; never auto-submits.
-    let sanitized = sanitize_for_insertion(&transcript);
-    let result = state.inserter.lock().unwrap().insert(&sanitized);
-    let event = match result.outcome {
-        InsertOutcome::Inserted => Event::Inserted,
-        InsertOutcome::CopiedOnly => Event::CopiedOnly,
-        InsertOutcome::Failed => Event::InsertError,
-    };
-    let _ = session.apply(event);
-    if result.outcome == InsertOutcome::Failed {
-        if let Some(m) = &result.message {
-            session.set_message(m.clone());
-        }
-    }
-    emit(&app, &session.snapshot());
-    Ok(result)
+pub async fn stop_dictation(app: AppHandle) -> Result<DictationResult, String> {
+    blocking(move || dictation::stop(&app)).await
 }
 
 #[tauri::command]
-pub fn cancel_dictation(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let mut session = state.session.lock().unwrap();
-    session.apply(Event::Cancel).map_err(|e| e.to_string())?;
-    state.audio.lock().unwrap().abort(); // release mic
-    state.asr.lock().unwrap().cancel();
-    emit(&app, &session.snapshot());
-    Ok(())
+pub async fn cancel_dictation(app: AppHandle) -> Result<(), String> {
+    blocking(move || dictation::cancel(&app)).await
 }
 
 #[tauri::command]
@@ -150,34 +53,67 @@ pub fn update_settings(
     let mut current = serde_json::to_value(&*settings).map_err(|e| e.to_string())?;
     if let (Some(obj), Some(p)) = (current.as_object_mut(), patch.as_object()) {
         for (k, v) in p {
+            // Reject unknown keys instead of silently ignoring them.
+            if !obj.contains_key(k) {
+                return Err(format!("unknown setting: {k}"));
+            }
             obj.insert(k.clone(), v.clone());
         }
+    } else {
+        return Err("settings patch must be an object".into());
     }
     let merged: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
+    // Validate shortcuts before accepting anything, then hot-swap them into the live hook.
+    let bindings = crate::hotkeys::Bindings::from_settings(&merged)?;
+    if let Some(shared) = state.hotkeys.lock().unwrap().as_ref() {
+        *shared.write().unwrap() = bindings;
+    }
     *settings = merged.clone();
     Ok(merged)
 }
 
 #[tauri::command]
 pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
-    state.models.lock().unwrap().clone()
+    let selected = state.settings.lock().unwrap().selected_speech_model_id.clone();
+    models::describe(&state.model_dir(), selected.as_deref(), &|id| state.facts(id))
 }
 
 #[tauri::command]
 pub fn select_model(state: State<AppState>, id: String) -> Result<(), String> {
-    let mut models = state.models.lock().unwrap();
-    let mut found = false;
-    for m in models.iter_mut() {
-        m.selected = m.id == id;
-        if m.id == id {
-            found = true;
-        }
-    }
-    if !found {
-        return Err(format!("unknown model: {id}"));
+    let entry = catalog_entry(&id).ok_or_else(|| format!("unknown model: {id}"))?;
+    if !models::is_installed(&state.model_dir(), entry) {
+        return Err(format!("{} is not installed", entry.name));
     }
     state.settings.lock().unwrap().selected_speech_model_id = Some(id);
     Ok(())
+}
+
+/// Recompute the SHA-256 of an installed model and compare with the pinned value.
+#[tauri::command]
+pub async fn verify_model(app: AppHandle, id: String) -> Result<bool, String> {
+    blocking(move || {
+        use tauri::Manager;
+        let state = app.state::<AppState>();
+        let entry = catalog_entry(&id).ok_or_else(|| format!("unknown model: {id}"))?;
+        let path = models::model_path(&state.model_dir(), entry);
+        let ok = models::has_ggml_magic(&path).unwrap_or(false)
+            && models::verify_file(&path, entry.size_bytes, entry.sha256).map_err(|e| e.to_string())?
+                == Verify::Ok;
+        state
+            .model_facts
+            .lock()
+            .unwrap()
+            .entry(id)
+            .or_default()
+            .integrity_verified = ok;
+        Ok(ok)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn asr_capabilities(state: State<AppState>) -> Capabilities {
+    state.asr.lock().unwrap().capabilities()
 }
 
 #[tauri::command]
@@ -202,11 +138,38 @@ pub fn clear_history(state: State<AppState>) {
 }
 
 #[tauri::command]
-pub fn list_input_devices(state: State<AppState>) -> Result<Vec<String>, String> {
-    state
-        .audio
-        .lock()
-        .unwrap()
-        .list_input_devices()
-        .map_err(|e| e.to_string())
+pub async fn list_input_devices(app: AppHandle) -> Result<Vec<InputDevice>, String> {
+    blocking(move || {
+        use tauri::Manager;
+        let state = app.state::<AppState>();
+        let devices = state.audio.lock().unwrap().list_input_devices();
+        devices.map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn copy_text(text: String) -> Result<(), String> {
+    crate::insert::copy_text(&text)
+}
+
+/// Store a user correction as the edited version. The raw transcript is never modified.
+#[tauri::command]
+pub fn set_history_edit(
+    state: State<AppState>,
+    id: String,
+    edited_text: Option<String>,
+) -> Result<HistoryEntry, String> {
+    let mut history = state.history.lock().unwrap();
+    let entry = history
+        .iter_mut()
+        .find(|e| e.id == id)
+        .ok_or_else(|| format!("no such entry: {id}"))?;
+    entry.edited_text = edited_text.filter(|t| !t.trim().is_empty() && *t != entry.raw_transcript);
+    Ok(entry.clone())
+}
+
+#[tauri::command]
+pub fn get_model_dir(state: State<AppState>) -> String {
+    state.model_dir().display().to_string()
 }

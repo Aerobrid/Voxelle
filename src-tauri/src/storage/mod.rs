@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub language: String,
     pub punctuation: bool,
@@ -14,6 +14,8 @@ pub struct Settings {
     pub store_transcripts: bool,
     pub retention_days: Option<u32>,
     pub prefer_gpu: bool,
+    /// cpal device id; None = system default microphone.
+    pub input_device_id: Option<String>,
     pub model_dir: Option<String>,
     pub selected_speech_model_id: Option<String>,
     pub toggle_hotkey: String,
@@ -31,11 +33,13 @@ impl Default for Settings {
             remove_filler_words: false, // cleanup off by default
             store_transcripts: true,
             retention_days: None, // keep forever until the user chooses
-            prefer_gpu: false,    // benchmark before defaulting to GPU on the GTX 1080
+            // GPU when this build has it: on the dev machine Vulkan was 12-27x faster (decisions.md).
+            prefer_gpu: crate::asr::GPU_COMPILED,
+            input_device_id: None,
             model_dir: None,
             selected_speech_model_id: None,
             toggle_hotkey: "CommandOrControl+Shift+Space".into(),
-            push_to_talk_hotkey: None,
+            push_to_talk_hotkey: Some("RightCtrl".into()),
             cancel_hotkey: Some("Escape".into()),
             offline_mode: true, // offline by default
         }

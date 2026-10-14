@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { NavRail } from "./components/NavRail";
 import { StatusStrip } from "./components/StatusStrip";
 import { useAppStore } from "./state/store";
-import { onSessionUpdate } from "./ipc/bridge";
+import { onDictationResult, onSessionUpdate } from "./ipc/bridge";
 import { Dashboard } from "./sections/Dashboard";
 import { History } from "./sections/History";
 import { ModelManager } from "./sections/ModelManager";
@@ -20,14 +20,14 @@ const PLANNED_NOTES: Record<string, string> = {
 export default function App() {
   const section = useAppStore((s) => s.section);
   const setSnapshot = useAppStore((s) => s.setSnapshot);
+  const setLastResult = useAppStore((s) => s.setLastResult);
 
   useEffect(() => {
-    let unsub = () => {};
-    onSessionUpdate(setSnapshot).then((fn) => {
-      unsub = fn;
-    });
-    return () => unsub();
-  }, [setSnapshot]);
+    const unsubs: Array<() => void> = [];
+    onSessionUpdate(setSnapshot).then((fn) => unsubs.push(fn));
+    onDictationResult(setLastResult).then((fn) => unsubs.push(fn));
+    return () => unsubs.forEach((u) => u());
+  }, [setSnapshot, setLastResult]);
 
   return (
     <div className="app">

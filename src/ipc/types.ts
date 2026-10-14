@@ -1,5 +1,5 @@
-// Shared types mirrored between the React UI and the Rust core (core/session, core/*).
-// Keep in sync with src-tauri/src/session/state.rs.
+// Shared types mirrored between the React UI and the Rust core.
+// Keep in sync with src-tauri/src/{session,insert,dictation,models,storage,audio,asr}.
 
 export type SessionState =
   | "idle"
@@ -18,6 +18,8 @@ export interface SessionSnapshot {
   message: string | null;
   /** Elapsed recording ms, when applicable. */
   elapsedMs: number;
+  /** Session id; increments on every start. */
+  generation: number;
 }
 
 /** Result of a text-insertion attempt. Never "inserted" when only copied. */
@@ -25,7 +27,29 @@ export type InsertOutcome = "inserted" | "copied-only" | "failed";
 
 export interface InsertResult {
   outcome: InsertOutcome;
+  /** Adapter that produced the outcome: "typed" | "clipboard-paste" | "clipboard-copy" | "none". */
+  method: string;
   message: string | null;
+}
+
+export interface DictationMetrics {
+  startLatencyMs: number;
+  audioMs: number;
+  modelLoadMs: number;
+  transcribeMs: number;
+  stopToTranscriptMs: number;
+  stopToInsertMs: number;
+  realTimeFactor: number;
+  gpu: boolean;
+}
+
+export interface DictationResult {
+  historyId: string | null;
+  /** Recognizer output exactly as produced (never AI-edited). */
+  transcript: string;
+  language: string | null;
+  insert: InsertResult;
+  metrics: DictationMetrics;
 }
 
 export type DataLocality = "local" | "network";
@@ -35,15 +59,32 @@ export interface ModelInfo {
   name: string;
   purpose: "speech" | "cleanup" | "vocabulary" | "embeddings" | "translation" | "diarization";
   locality: DataLocality;
-  sizeBytes: number | null;
+  sizeBytes: number;
+  memoryMb: number;
   languages: string[];
   license: string;
   source: string;
+  sha256: string;
   installed: boolean;
+  path: string | null;
   selected: boolean;
+  integrityVerified: boolean;
   /** Measured speed on this machine (real-time factor), null until benchmarked. */
   measuredRtf: number | null;
-  integrityVerified: boolean;
+  measuredBackend: string | null;
+}
+
+export interface AsrCapabilities {
+  gpuCompiled: boolean;
+  gpuActive: boolean;
+  streaming: boolean;
+  multilingual: boolean;
+}
+
+export interface InputDevice {
+  id: string;
+  name: string;
+  isDefault: boolean;
 }
 
 export interface HistoryEntry {
@@ -51,20 +92,21 @@ export interface HistoryEntry {
   createdAt: string; // ISO8601
   /** Raw recognizer output — never overwritten by AI edits. */
   rawTranscript: string;
-  /** Optional AI-edited version, stored separately. null in P0. */
+  /** User- or AI-edited version, stored separately from the raw transcript. */
   editedText: string | null;
   durationMs: number;
   language: string | null;
 }
 
 export interface Settings {
-  language: string; // "auto" or BCP-47
+  language: string; // "auto" or a whisper language code
   punctuation: boolean;
   autoCapitalize: boolean;
   removeFillerWords: boolean; // cleanup off by default
   storeTranscripts: boolean; // false disables history storage entirely
   retentionDays: number | null; // null = keep forever
   preferGpu: boolean;
+  inputDeviceId: string | null; // null = system default microphone
   modelDir: string | null;
   selectedSpeechModelId: string | null;
   toggleHotkey: string;

@@ -13,6 +13,10 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    rollupOptions: {
+      // Two pages: the main window and the click-through recording indicator.
+      input: { main: "index.html", overlay: "overlay.html" },
+    },
     target: "es2021",
     sourcemap: false,
   },

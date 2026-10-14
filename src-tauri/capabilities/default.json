@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Minimal capability for the main window. The renderer has no direct OS access; all capabilities go through validated core commands.",
-  "windows": ["main"],
+  "windows": ["main", "overlay"],
   "permissions": ["core:default"]
 }

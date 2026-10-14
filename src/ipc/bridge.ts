@@ -4,8 +4,10 @@
 // which the UI renders as an honest "core not connected" state rather than faking data.
 
 import type {
+  AsrCapabilities,
+  DictationResult,
+  InputDevice,
   HistoryEntry,
-  InsertResult,
   ModelInfo,
   SessionSnapshot,
   Settings,
@@ -38,10 +40,19 @@ export async function onSessionUpdate(
   return unlisten;
 }
 
+/** Subscribe to finished dictations (transcript + insertion outcome + timings). */
+export async function onDictationResult(
+  handler: (r: DictationResult) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<DictationResult>("dictation_result", (e) => handler(e.payload));
+}
+
 export const core = {
   getSessionSnapshot: () => call<SessionSnapshot>("get_session_snapshot"),
   startDictation: () => call<void>("start_dictation"),
-  stopDictation: () => call<InsertResult>("stop_dictation"),
+  stopDictation: () => call<DictationResult>("stop_dictation"),
   cancelDictation: () => call<void>("cancel_dictation"),
 
   getSettings: () => call<Settings>("get_settings"),
@@ -49,10 +60,16 @@ export const core = {
 
   listModels: () => call<ModelInfo[]>("list_models"),
   selectModel: (id: string) => call<void>("select_model", { id }),
+  verifyModel: (id: string) => call<boolean>("verify_model", { id }),
+  asrCapabilities: () => call<AsrCapabilities>("asr_capabilities"),
+  getModelDir: () => call<string>("get_model_dir"),
 
   getHistory: () => call<HistoryEntry[]>("get_history"),
   deleteHistoryEntry: (id: string) => call<void>("delete_history_entry", { id }),
   clearHistory: () => call<void>("clear_history"),
 
-  listInputDevices: () => call<string[]>("list_input_devices"),
+  listInputDevices: () => call<InputDevice[]>("list_input_devices"),
+  copyText: (text: string) => call<void>("copy_text", { text }),
+  setHistoryEdit: (id: string, editedText: string | null) =>
+    call<HistoryEntry>("set_history_edit", { id, editedText }),
 };

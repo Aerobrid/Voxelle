@@ -6,12 +6,20 @@ authors = ["Voxelle"]
 edition = "2021"
 license = "Apache-2.0"
 
-# The Tauri binary. Audio capture, ASR (whisper.cpp), and platform adapters are added as their
-# P0 slices land (each compiled + tested with the MSVC toolchain). Kept minimal here so the
-# foundation compiles cleanly.
+# Core logic lives in the library so tools (examples/asr_bench.rs) reuse exactly what the app runs.
+[lib]
+name = "voxelle_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "voxelle"
 path = "src/main.rs"
+
+# GPU acceleration is opt-in at build time; CPU inference is always available at runtime.
+[features]
+default = []
+gpu-vulkan = ["whisper-rs/vulkan"]
+gpu-cuda = ["whisper-rs/cuda"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -22,8 +30,27 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cpal = "0.18"
+whisper-rs = "0.16"
+sha2 = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 strip = true
 lto = true
 opt-level = "s"
+
+[dev-dependencies]
+hound = "3.5"

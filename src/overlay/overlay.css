@@ -1,0 +1,65 @@
+/* Recording indicator — palette from docs/ui-direction.md; waveform motif from the logo. */
+html,
+body.overlay-body,
+#overlay-root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+#overlay-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 20, 39, 0.94);
+  border: 1px solid #2c3560;
+  color: #f4f6ff;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pill__bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+}
+.pill__bar {
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #5b8cff, #8a7cff);
+  transform-origin: center;
+  transition: transform 60ms linear;
+}
+.pill--recording {
+  border-color: #ff4d5e;
+}
+.pill--recording .pill__bar {
+  background: linear-gradient(180deg, #ff4d5e, #8a7cff);
+}
+.pill--failed {
+  border-color: #ff5466;
+}
+.pill--completed {
+  border-color: #3dd68c;
+}
+.pill__time {
+  color: #aeb6d6;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill__bar {
+    transition: none;
+  }
+}

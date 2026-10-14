@@ -51,3 +51,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Extra cargo target dirs (e.g. per-feature builds)
+target-*/
+# Benchmark output (machine-specific)
+bench/results/

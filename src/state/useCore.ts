@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CoreNotConnected } from "../ipc/bridge";
 
 export type CoreQuery<T> =
@@ -7,9 +7,18 @@ export type CoreQuery<T> =
   | { status: "disconnected" }
   | { status: "error"; error: string };
 
-/** Run a core call, mapping CoreNotConnected to an honest "disconnected" state (no fake data). */
-export function useCore<T>(fn: () => Promise<T>, deps: unknown[] = []): CoreQuery<T> {
+export function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Run a core call, mapping CoreNotConnected to an honest "disconnected" state (no fake data).
+ * Returns the query state and a `reload` function for after mutations.
+ */
+export function useCore<T>(fn: () => Promise<T>, deps: unknown[] = []): [CoreQuery<T>, () => void] {
   const [state, setState] = useState<CoreQuery<T>>({ status: "loading" });
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
   useEffect(() => {
     let active = true;
     fn()
@@ -17,12 +26,12 @@ export function useCore<T>(fn: () => Promise<T>, deps: unknown[] = []): CoreQuer
       .catch((e: unknown) => {
         if (!active) return;
         if (e instanceof CoreNotConnected) setState({ status: "disconnected" });
-        else setState({ status: "error", error: e instanceof Error ? e.message : String(e) });
+        else setState({ status: "error", error: errorText(e) });
       });
     return () => {
       active = false;
     };
     // deps are intentionally caller-controlled
-  }, deps);
-  return state;
+  }, [...deps, version]);
+  return [state, reload];
 }

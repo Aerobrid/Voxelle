@@ -4,19 +4,34 @@ Per-platform constraints for the dictation loop (P0 §0.1 requires these documen
 observed on this machine; otherwise "to verify on <platform>".
 
 ## Windows (primary dev target)
-- **Global hotkeys:** Tauri global-shortcut registers accelerators that fire on **key-down** only —
-  enough for toggle/cancel, **not** for true push-to-talk (needs key-up). For hold-to-talk we add a
-  low-level key-state layer (candidate: `rdev` low-level hook, or Win32 `SetWindowsHookEx`/
-  `RegisterRawInputDevices` via `windows-rs`). Decision recorded in decisions.md when implemented.
-- **Text insertion:** primary = set clipboard → synthesize Ctrl+V (`SendInput`); verify via UI
-  Automation where available; fallback = copied-only. **Elevation boundary:** a non-elevated process
-  cannot `SendInput` into an elevated (admin) window (UIPI). Detect and report "copied-only" rather
-  than silently failing. Secure Desktop (UAC prompt, lock screen) and some password fields block
-  injection — report, never claim "inserted".
-- **Mic permission:** Windows 10/11 has a per-app microphone privacy setting; capture can fail with a
-  permission error that must surface clearly (not a crash).
+- **Global hotkeys (implemented):** a `WH_KEYBOARD_LL` low-level hook on a dedicated thread
+  (`src-tauri/src/hotkeys/windows.rs`). It sees key-up (push-to-talk), ignores injected events
+  (`LLKHF_INJECTED`, so our own typing/paste never triggers it), and swallows only the bound keys.
+  A registered hotkey (`RegisterHotKey` / Tauri global-shortcut) was not used: press-only.
+  Limitation: LL hooks do not receive input aimed at elevated windows when Voxelle is not elevated,
+  and Windows removes a hook that stalls (>~1 s); the hook does no blocking work.
+- **Text insertion (implemented):** SendInput Unicode typing → clipboard paste (Ctrl+V) with full
+  clipboard save/restore → copy-only. **Elevation boundary:** a non-elevated process cannot
+  `SendInput` into an elevated window (UIPI); we detect the target's token elevation and report
+  **copied-only** with the reason. Terminals (conhost, Windows Terminal, mintty, …) never receive
+  multi-line text. Remote-desktop clients (mstsc) get clipboard paste. "Inserted" = Windows accepted
+  all key events into the focused window's queue; the OS cannot confirm the app consumed them.
+  **Not detectable yet:** password/secure fields (would need UI Automation `IsPassword`), apps that
+  drop synthetic input (some games, some anti-cheat). Secure Desktop (UAC, lock screen) blocks
+  everything — the hook and insertion simply don't run there.
+- **Clipboard privacy:** clipboard writes are tagged to stay out of Win+V history and cloud
+  clipboard (`CanIncludeInClipboardHistory=0`, `CanUploadToCloudClipboard=0`,
+  `ExcludeClipboardContentFromMonitorProcessing`).
+- **Mic permission:** Settings › Privacy › Microphone › "Let desktop apps access your microphone".
+  When denied, cpal returns an error that we surface as a clear message (not a crash).
+- **Recording indicator:** non-focusable (`WS_EX_NOACTIVATE`), click-through, always-on-top overlay
+  window at the bottom centre of the primary monitor's work area.
+- **GPU:** whisper.cpp Vulkan backend (`--features gpu-vulkan`), verified on GTX 1080 / driver 582.28 /
+  Vulkan 1.4.312. The Vulkan build imports `vulkan-1.dll`; machines without a Vulkan loader (some
+  VMs) need the CPU build until delay-loading is added.
+- **Building:** run cargo/tauri through `scripts\win-env.cmd` (Ninja + VS dev env). The default VS
+  generator path produces an unoptimized whisper.cpp (~6x slower) — see decisions 2026-10-14.
 - **Packaging:** Tauri NSIS/MSI installer; WebView2 runtime required (present: 154.x).
-
 ## Linux
 - **X11:** global shortcuts and synthetic input (XTEST) generally work; clipboard via X selections.
 - **Wayland:** **no universal global-shortcut API.** Options, in order of portability:

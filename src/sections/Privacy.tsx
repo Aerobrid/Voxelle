@@ -3,7 +3,7 @@ import { useCore } from "../state/useCore";
 import { useAppStore } from "../state/store";
 
 export function Privacy() {
-  const q = useCore(() => core.getSettings(), []);
+  const [q] = useCore(() => core.getSettings(), []);
   const snapshot = useAppStore((s) => s.snapshot);
   const recording = snapshot.state === "recording";
 
