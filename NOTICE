@@ -1,0 +1,19 @@
+Voxelle
+Copyright 2026 The Voxelle Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party attributions
+-------------------------
+No third-party source code has been copied into this repository.
+
+If source is ever reused from a permissively licensed project (MIT / Apache-2.0 /
+BSD), the file, upstream project, license, and any modifications are recorded here
+and the upstream license notice is preserved, per the project's reference policy.
+
+Fonts (bundled at build time, not in this repo yet):
+  - Inter — SIL Open Font License 1.1
+  - JetBrains Mono — SIL Open Font License 1.1
+
+Speech models (downloaded on demand with user consent, never bundled):
+  - OpenAI Whisper weights (whisper.cpp GGUF) — MIT

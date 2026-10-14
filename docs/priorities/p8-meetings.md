@@ -1,0 +1,5 @@
+# P8 - Meeting transcription and speaker identification
+Start only after dictation, notes, and AI processing are stable.
+User-initiated recording or import; local transcription; timestamped segments; optional local diarization (evaluate sherpa-onnx and alternatives); speaker labels with manual correction; searchable transcripts; local-LLM summaries; export to text, Markdown, subtitles.
+Diarization (who spoke when) is not speaker identification (which person). Persistent voice profiles are opt-in and local only. Visible recording indicator always; never record silently or bypass OS permissions; document consent considerations. Calendar integration and auto-detection are later and must not add a cloud dependency.
+Capture system/loopback audio (remote participants) alongside the mic, as separate tracks where the OS allows it. Document the method and permissions per platform in docs/platform-notes.md.

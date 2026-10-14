@@ -1,0 +1,2 @@
+# P7 - Audio import and batch transcription
+Import audio files, batch transcribe with progress and cancellation, language selection, export to TXT/Markdown/SRT, optional local translation and cleanup, works offline. Never delete source files unless the user asks. Video/URL import only if legal and reliable, opt-in, and with network activity explained. No silent downloads, no bypassing access controls.

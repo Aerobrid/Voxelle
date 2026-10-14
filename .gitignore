@@ -1,0 +1,53 @@
+# Models and user data
+*.gguf
+*.bin
+*.onnx
+*.safetensors
+models/
+*.db
+*.sqlite
+*.sqlite3
+*.wav
+*.mp3
+*.m4a
+*.flac
+recordings/
+transcripts/
+user-data/
+
+# Reverse-engineering material 
+rea-output/
+.rea/
+decompiled/
+reference-app/
+reference-screenshots/
+docs/reference-analysis.md
+
+# Agent working files 
+CLAUDE.md
+CLAUDE.local.md
+prompts/
+docs/progress.md
+.claude/settings.local.json
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Build artifacts and dependencies
+node_modules/
+target/
+dist/
+build/
+out/
+__pycache__/
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp

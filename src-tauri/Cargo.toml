@@ -1,0 +1,29 @@
+[package]
+name = "voxelle"
+version = "0.0.1"
+description = "Voxelle — local, private-first offline dictation & voice AI."
+authors = ["Voxelle"]
+edition = "2021"
+license = "Apache-2.0"
+
+# The Tauri binary. Audio capture, ASR (whisper.cpp), and platform adapters are added as their
+# P0 slices land (each compiled + tested with the MSVC toolchain). Kept minimal here so the
+# foundation compiles cleanly.
+[[bin]]
+name = "voxelle"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
