@@ -19,6 +19,9 @@ pub struct Settings {
     pub prefer_gpu: bool,
     /// cpal device id; None = system default microphone.
     pub input_device_id: Option<String>,
+    /// Keep the mic open this many seconds after a dictation so the next one starts instantly
+    /// (Bluetooth headsets otherwise drop the first ~1-3 s). 0 = off; u32::MAX = until quit.
+    pub keep_mic_ready_secs: u32,
     pub model_dir: Option<String>,
     pub selected_speech_model_id: Option<String>,
     pub toggle_hotkey: String,
@@ -39,6 +42,7 @@ impl Default for Settings {
             // GPU when this build has it: on the dev machine Vulkan was 12-27x faster (decisions.md).
             prefer_gpu: crate::asr::GPU_COMPILED,
             input_device_id: None,
+            keep_mic_ready_secs: 0, // privacy: mic released after every dictation by default
             model_dir: None,
             selected_speech_model_id: None,
             toggle_hotkey: "Ctrl+Shift+Space".into(),
@@ -58,4 +62,15 @@ pub struct HistoryEntry {
     pub edited_text: Option<String>,
     pub duration_ms: u64,
     pub language: Option<String>,
+}
+
+impl Settings {
+    /// How long capture should keep the device open after a recording.
+    pub fn keep_mic_ready(&self) -> std::time::Duration {
+        match self.keep_mic_ready_secs {
+            0 => std::time::Duration::ZERO,
+            u32::MAX => std::time::Duration::MAX,
+            s => std::time::Duration::from_secs(s as u64),
+        }
+    }
 }

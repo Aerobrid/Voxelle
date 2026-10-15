@@ -5,15 +5,17 @@ Status vocabulary (principles.md #8): **implemented** · **experimental** · **p
 observed working by a command that was run. "experimental" = code + unit tests exist, not yet
 observed end-to-end in the running app.
 
-_Last updated: 2026-10-14 (session 2 — audio, ASR (Vulkan), model checks, Windows insertion,
-hotkeys, overlay, SQLite storage, UI controls; benchmarks + insertion/mic probes run. Real-voice
-E2E from another app not yet run)._
+_Last updated: 2026-10-15 (session 3 — fixed the repeat-recording mic failure and missing audio at
+recording start; keep-mic-ready option; "Starting mic…" indicator; clipboard copies verified by
+read-back. Real-voice E2E: one successful user dictation, the rest blocked by the now-fixed bug)._
 
 ## P0 — Reliable desktop dictation
 | Area | Feature | Status | Evidence / notes |
 |---|---|---|---|
 | 0.1 | State machine idle→recording→processing→inserting→completed/cancelled/failed | implemented | 10 state + 4 session tests pass (`cargo test`), session generation guards stale results |
-| 0.1 | Mic capture (cpal), downmix, resample to 16 kHz | implemented | `mic_probe`: real BT headset captured 3.0 s  kHz, mic released after stop; DSP unit-tested. Mic start latency 696 ms on this Bluetooth headset
+| 0.1 | Mic capture (cpal), downmix, resample to 16 kHz | implemented | 2026-10-15: one process-lifetime MTA audio thread; "System default" resolved to its concrete endpoint. `capture_repeat` 20/20 rounds + real app 6/6 start/stop (was failing from round 3 with RPC_E_CHANGED_MODE); full-length audio (was missing ~0.6 s at start). One real-voice user dictation succeeded before the fix. DSP unit-tested
+| 0.1 | Keep microphone ready (optional, default off) | implemented | `capture_repeat --keep`: next start 0 ms, closes after the idle timeout, cancel releases the mic. Settings dropdown not yet clicked through
+| 0.1 | "Starting mic…" until first audio + slow-mic hint | experimental | `first_audio_ms` measured per recording (probe); overlay label unit-tested; not yet seen during a real Bluetooth start-up
 | 0.1 | Input device selection + level meter | experimental | `list_input_devices`, Settings dropdown, 20 Hz level events; not yet observed |
 | 0.1 | Device-disconnect recovery | experimental | cpal error → `disconnected` flag → session Failed + mic released; not exercised |
 | 0.1 | Global toggle / push-to-talk / cancel (Windows) | experimental | WH_KEYBOARD_LL hook + pure matcher (11 tests); not yet exercised in the app |
@@ -32,6 +34,7 @@ E2E from another app not yet run)._
 | 0.2 | Non-speech hallucination guard | implemented | energy gate (-45 dBFS) tested; whisper alone outputs "you" on noise (test documents it) |
 | 0.3 | Insertion ladder: type → paste → copy-only (Windows) | implemented (with known false positive) | `insert-probe.ps1` 19/20 exact (typed ASCII 5/5, Unicode+emoji 5/5, long paste 4/5, multi-line paste 5/5), user clipboard restored. 1 paste reported "inserted" without arriving → add UI Automation verification
 | 0.3 | Result states inserted / copied-only / failed | implemented (logic) | never "inserted" for copy paths (tests) |
+| 0.3 | Copy buttons / copy-only fallback put text on the clipboard | implemented | 2026-10-15: real app `copy_text` IPC → read back by another process. Deliberate copies are normal Win+V history entries, verified by read-back before reporting success (2 real-clipboard tests). History Copy button not clicked yet (history was empty)
 | 0.3 | Elevated / terminal / remote-desktop / no-focus handling | experimental | detection code + tests for rules; not exercised against real elevated app |
 | 0.4 | Settings UI (shortcuts, mic, language, GPU, history on/off, retention) | experimental | editable + validated; persisted in SQLite (tests); not yet clicked through in the app
 | 0.4 | History copy / correct / delete / clear / export; raw kept separate from edits | experimental | SQLite store, trigger makes raw_transcript immutable (tested); export to Downloads as JSON; UI not yet clicked through

@@ -48,6 +48,10 @@ body.overlay-body,
 .pill--recording .pill__bar {
   background: linear-gradient(180deg, #ff4d5e, #8a7cff);
 }
+/* Recording requested but the mic has not delivered audio yet: amber, not "live" red. */
+.pill--recording.pill--warming {
+  border-color: #f5b84a;
+}
 .pill--failed {
   border-color: #ff5466;
 }

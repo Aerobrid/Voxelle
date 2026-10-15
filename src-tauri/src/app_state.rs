@@ -47,6 +47,7 @@ impl AppState {
             }
         };
         let settings = store.load_settings().ok().flatten().unwrap_or_default();
+        let keep_mic = settings.keep_mic_ready();
         let model_dir = settings.model_dir.clone().map(PathBuf::from).unwrap_or_else(|| default_model_dir.clone());
 
         // A past SHA-256 check still counts only if the file is byte-for-byte the same size and
@@ -66,7 +67,11 @@ impl AppState {
             storage_persistent,
             default_model_dir,
             model_facts: Mutex::new(facts),
-            audio: Mutex::new(Box::new(CpalCapture::new())),
+            audio: Mutex::new({
+                let mut capture: Box<dyn AudioCapture> = Box::new(CpalCapture::new());
+                capture.set_keep_open(keep_mic);
+                capture
+            }),
             asr: Mutex::new(Box::new(WhisperBackend::new())),
             asr_cancel: CancelToken::default(),
             inserter: Mutex::new(inserter),

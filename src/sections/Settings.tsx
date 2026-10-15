@@ -4,6 +4,9 @@ import type { Settings as SettingsT } from "../ipc/types";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
 
+/** Matches u32::MAX in the core: keep the mic open until the app quits. */
+const KEEP_UNTIL_QUIT = 4294967295;
+
 const LANGUAGES: Array<[string, string]> = [
   ["auto", "Detect automatically"],
   ["en", "English"],
@@ -129,6 +132,22 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
                   {d.isDefault ? " (default)" : ""}
                 </option>
               ))}
+          </select>
+        </Field>
+        <Field
+          label="Keep microphone ready"
+          hint="Leaves the mic open after a dictation so the next one starts instantly. Use it if your first words get cut off (common with Bluetooth headsets). While open, Windows shows the mic as in use and Bluetooth headsets stay in call-quality audio. Nothing is recorded until you dictate."
+        >
+          <select
+            className="input"
+            value={String(s.keepMicReadySecs)}
+            onChange={(e) => save({ keepMicReadySecs: Number(e.target.value) })}
+          >
+            <option value="0">Off</option>
+            <option value="60">For 1 minute</option>
+            <option value="300">For 5 minutes</option>
+            <option value="1800">For 30 minutes</option>
+            <option value={String(KEEP_UNTIL_QUIT)}>Until Voxelle quits</option>
           </select>
         </Field>
         {devices.status === "error" && <p className="error">{devices.error}</p>}

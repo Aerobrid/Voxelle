@@ -12,7 +12,7 @@ export function nextBars(prev: number[], level: number): number[] {
 export function overlayLabel(s: SessionSnapshot): string {
   switch (s.state) {
     case "recording":
-      return "Listening";
+      return s.micReady ? "Listening" : "Starting mic…";
     case "processing":
       return "Transcribing…";
     case "inserting":

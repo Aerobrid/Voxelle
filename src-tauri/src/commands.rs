@@ -66,6 +66,7 @@ pub fn update_settings(
     let merged: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
     // Validate shortcuts before accepting anything, then hot-swap them into the live hook.
     let bindings = crate::hotkeys::Bindings::from_settings(&merged)?;
+    let keep_mic = merged.keep_mic_ready();
     let reload_model = settings.selected_speech_model_id != merged.selected_speech_model_id
         || settings.prefer_gpu != merged.prefer_gpu;
     state.save_settings(&merged)?; // persist first: never apply a setting that was not saved
@@ -74,6 +75,7 @@ pub fn update_settings(
     }
     *settings = merged.clone();
     drop(settings);
+    state.audio.lock().unwrap().set_keep_open(keep_mic);
     if reload_model {
         crate::dictation::preload_selected_model(&app);
     }

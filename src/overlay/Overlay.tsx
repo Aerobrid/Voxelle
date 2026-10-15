@@ -29,14 +29,14 @@ export function Overlay() {
   if (!snap) return null;
   const label = overlayLabel(snap);
   return (
-    <div className={`pill pill--${snap.state}`} role="status" aria-live="polite">
+    <div className={`pill pill--${snap.state}${snap.state === "recording" && !snap.micReady ? " pill--warming" : ""}`} role="status" aria-live="polite">
       <span className="pill__bars" aria-hidden>
         {bars.map((h, i) => (
           <span key={i} className="pill__bar" style={{ transform: `scaleY(${h})` }} />
         ))}
       </span>
       <span className="pill__label">{label}</span>
-      {snap.state === "recording" && (
+      {snap.state === "recording" && snap.micReady && (
         <span className="pill__time">{(snap.elapsedMs / 1000).toFixed(0)}s</span>
       )}
     </div>

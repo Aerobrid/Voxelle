@@ -32,6 +32,11 @@ const SILENCE_PEAK: f32 = 1e-4;
 pub struct DictationMetrics {
     /// Hotkey/UI request → microphone stream running.
     pub start_latency_ms: u64,
+    /// Recording start → first samples from the device (Bluetooth headsets: often 1-3 s).
+    /// Speech before this is lost; `None` if the device delivered nothing.
+    pub first_audio_ms: Option<u64>,
+    /// The mic was still open from the previous dictation ("keep microphone ready").
+    pub mic_was_ready: bool,
     pub audio_ms: u64,
     pub model_load_ms: u64,
     pub transcribe_ms: u64,
@@ -89,6 +94,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     let generation = session.generation();
     st.asr_cancel.reset();
 
+    let was_open = st.audio.lock().unwrap().is_open();
     let opened = st.audio.lock().unwrap().start(device.as_deref());
     if let Err(e) = opened {
         st.audio.lock().unwrap().abort(); // release the mic on failure
@@ -102,12 +108,14 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     drop(session);
     eprintln!("[voxelle] recording started ({start_latency_ms} ms)");
     *LAST_START_LATENCY.lock().unwrap() = start_latency_ms;
+    *LAST_MIC_WAS_READY.lock().unwrap() = was_open;
 
     spawn_level_monitor(app.clone(), generation);
     Ok(())
 }
 
 static LAST_START_LATENCY: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+static LAST_MIC_WAS_READY: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
 /// Pushes level/elapsed to the UI while recording and turns a device disconnect into a clean
 /// failure (mic released) instead of a hung session.
@@ -120,9 +128,9 @@ fn spawn_level_monitor(app: AppHandle, generation: u64) {
         if session.generation() != generation || session.state() != SessionState::Recording {
             return;
         }
-        let (level, disconnected) = {
+        let (level, disconnected, ready) = {
             let audio = st.audio.lock().unwrap();
-            (audio.level(), audio.disconnected())
+            (audio.level(), audio.disconnected(), audio.first_audio_ms().is_some())
         };
         if disconnected {
             st.audio.lock().unwrap().abort();
@@ -132,6 +140,7 @@ fn spawn_level_monitor(app: AppHandle, generation: u64) {
             return;
         }
         session.set_level(level);
+        session.set_mic_ready(ready);
         session.set_elapsed_ms(started.elapsed().as_millis() as u64);
         emit(&app, &session.snapshot());
     });
@@ -168,7 +177,11 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
         session.generation()
     };
 
-    let captured = st.audio.lock().unwrap().stop(); // releases the device
+    let (captured, first_audio_ms) = {
+        let mut audio = st.audio.lock().unwrap();
+        let first = audio.first_audio_ms();
+        (audio.stop(), first) // releases the device unless "keep microphone ready" is on
+    };
     let captured = match captured {
         Ok(c) => c,
         Err(e) => return Err(fail(app, generation, Event::AsrError, e.to_string())),
@@ -185,6 +198,8 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
 
     let mut metrics = DictationMetrics {
         start_latency_ms: *LAST_START_LATENCY.lock().unwrap(),
+        first_audio_ms,
+        mic_was_ready: *LAST_MIC_WAS_READY.lock().unwrap(),
         audio_ms: captured.duration_ms(),
         ..Default::default()
     };

@@ -157,3 +157,34 @@ Append-only record of non-obvious choices. Format: date — decision — why —
 - **Defaults:** toggle `Ctrl+Shift+Space`, push-to-talk `RightCtrl` (hold), cancel `Escape` (only
   swallowed while a session is active). A modifier-only PTT key used in a chord (RightCtrl+C)
   cancels the dictation quietly instead of recording. Taps under 250 ms are cancelled.
+
+## 2026-10-15 — Audio capture: one process-lifetime audio thread, concrete default endpoint
+- **Bug (user-reported, reproduced):** "audio capture not available: Failed to get audio client:
+  Cannot change thread mode after it is set (RPC_E_CHANGED_MODE)" after 2–3 recordings, then on
+  every one. `examples/capture_repeat.rs` reproduced it on round 3–4.
+- **Cause found:** cpal opens the *virtual* default capture device through
+  `ActivateAudioInterfaceAsync`; on this machine that started failing after a few activations and
+  never recovered. It also cost ~0.6 s of missing audio at the start of every recording. Opening the
+  concrete endpoint (`IMMDevice::Activate`) has neither problem: 20/20 rounds, full-length audio.
+- **Decision:** resolve "System default" to the concrete endpoint id each time a recording opens
+  (so it still follows the user's default). All cpal calls run on one process-lifetime thread that
+  joins the MTA first, because cpal caches a global device enumerator in whichever apartment first
+  touches audio; a short-lived thread would leave it dangling.
+
+## 2026-10-15 — "Keep microphone ready" (off by default)
+- Bluetooth headsets switch to the hands-free profile when their mic opens and deliver little or no
+  audio for ~0.5–3 s, so the first words are lost. The only full fix is to not reopen the mic.
+- **Decision:** optional setting (Off / 1 / 5 / 30 min / until quit), **default Off** (privacy: the
+  mic indicator stays on while open, and BT headsets stay in call-quality audio). Between
+  recordings the callback drops samples; nothing is buffered. Cancel/errors always release the mic.
+- The recording pill says "Starting mic…" (amber) until the device delivers its first samples, and
+  the dashboard suggests the setting when first audio took ≥ 400 ms.
+
+## 2026-10-15 — Clipboard: deliberate copies are ordinary entries, verified by read-back
+- Supersedes the clipboard-privacy bullet of 2026-10-14 for *deliberate* copies. The user reported
+  that Copy "says it copied but didn't". Copy itself worked (verified by reading back from another
+  process), but every write was flagged out of Win+V clipboard history, which looks like a failed
+  copy to anyone who checks there.
+- **Decision:** Copy buttons and the copy-only fallback write a normal clipboard entry and read it
+  back before reporting success. Only the transient paste buffer (restored ~450 ms later) keeps the
+  history/cloud/monitor exclusion flags.

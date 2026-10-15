@@ -18,6 +18,8 @@ export interface SessionSnapshot {
   message: string | null;
   /** Elapsed recording ms, when applicable. */
   elapsedMs: number;
+  /** While recording: true once the mic has delivered audio (Bluetooth headsets can take 1-3 s). */
+  micReady: boolean;
   /** Session id; increments on every start. */
   generation: number;
 }
@@ -34,6 +36,10 @@ export interface InsertResult {
 
 export interface DictationMetrics {
   startLatencyMs: number;
+  /** Recording start → first samples from the device; speech before this is lost. */
+  firstAudioMs: number | null;
+  /** The mic was still open from the previous dictation ("keep microphone ready"). */
+  micWasReady: boolean;
   audioMs: number;
   modelLoadMs: number;
   transcribeMs: number;
@@ -107,6 +113,7 @@ export interface Settings {
   retentionDays: number | null; // null = keep forever
   preferGpu: boolean;
   inputDeviceId: string | null; // null = system default microphone
+  keepMicReadySecs: number; // 0 = release mic after each dictation; 4294967295 = until quit
   modelDir: string | null;
   selectedSpeechModelId: string | null;
   toggleHotkey: string;

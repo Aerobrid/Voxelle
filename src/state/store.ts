@@ -32,7 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "audio-import", label: "Audio Import", planned: true },
 ];
 
-const IDLE: SessionSnapshot = { state: "idle", level: 0, message: null, elapsedMs: 0, generation: 0 };
+const IDLE: SessionSnapshot = { state: "idle", level: 0, message: null, elapsedMs: 0, micReady: false, generation: 0 };
 
 interface AppState {
   section: SectionId;

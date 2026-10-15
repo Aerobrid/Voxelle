@@ -14,6 +14,9 @@ for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Mic
 if not defined VSDIR (echo Visual Studio C++ tools not found & exit /b 1)
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 if not defined LIBCLANG_PATH set "LIBCLANG_PATH=%ProgramFiles%\LLVM\bin"
+if not defined VULKAN_SDK (
+	for /f "delims=" %%i in ('dir /b /ad /o-n "%SystemDrive%\VulkanSDK" 2^>nul') do if not defined VULKAN_SDK set "VULKAN_SDK=%SystemDrive%\VulkanSDK\%%i"
+)
 if defined VULKAN_SDK set "PATH=%VULKAN_SDK%\Bin;%PATH%"
 rem Target dir must be short (MAX_PATH) and contain no spaces: the Vulkan shader-generator
 rem sub-build's resource-compiler step fails on paths with spaces (e.g. C:\Users\First Last).

@@ -11,6 +11,9 @@ const OUTCOME_TEXT: Record<string, string> = {
   failed: "Not inserted",
 };
 
+/** First-audio delay worth telling the user about (speech before it is lost). */
+const SLOW_MIC_MS = 400;
+
 function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
 }
@@ -72,10 +75,19 @@ function LastResult({ result }: { result: DictationResult }) {
       <p className="muted small">
         {fmtMs(m.audioMs)} of audio · transcribed in {fmtMs(m.transcribeMs)} on{" "}
         {m.gpu ? "GPU" : "CPU"} (RTF {m.realTimeFactor.toFixed(2)}) · stop → text{" "}
-        {fmtMs(m.stopToTranscriptMs)} · mic start {fmtMs(m.startLatencyMs)}
+        {fmtMs(m.stopToTranscriptMs)} · mic start{" "}
+        {m.micWasReady ? "instant (kept ready)" : fmtMs(m.startLatencyMs)}
+        {m.firstAudioMs != null && m.firstAudioMs > 100 ? ` · first audio after ${fmtMs(m.firstAudioMs)}` : ""}
         {m.modelLoadMs > 50 ? ` · model load ${fmtMs(m.modelLoadMs)}` : ""} · via{" "}
         {result.insert.method}
       </p>
+      {!m.micWasReady && m.firstAudioMs != null && m.firstAudioMs >= SLOW_MIC_MS && (
+        <p className="notice small">
+          Your microphone took {fmtMs(m.firstAudioMs)} to start sending audio, so the first words may
+          be missing. This is common with Bluetooth headsets. Turn on <em>Keep microphone ready</em> in
+          Settings to start instantly next time.
+        </p>
+      )}
     </div>
   );
 }

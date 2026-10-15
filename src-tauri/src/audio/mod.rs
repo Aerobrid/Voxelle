@@ -48,6 +48,14 @@ pub trait AudioCapture: Send {
     fn is_capturing(&self) -> bool;
     /// True once the open device reported it went away mid-recording.
     fn disconnected(&self) -> bool;
+    /// Milliseconds from the start of the current recording until the device delivered its first
+    /// samples; `None` while it has delivered nothing (e.g. a Bluetooth headset still switching).
+    fn first_audio_ms(&self) -> Option<u64>;
+    /// Keep the device open this long after a recording so the next one starts instantly.
+    /// `Duration::ZERO` releases the mic right after each recording; `Duration::MAX` = until exit.
+    fn set_keep_open(&mut self, keep: std::time::Duration);
+    /// True while the device is open (recording, or kept ready between recordings).
+    fn is_open(&self) -> bool;
 }
 
 pub struct CapturedAudio {

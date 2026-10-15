@@ -82,12 +82,15 @@ fn paste_or_copy(text: &str, prior_error: Option<String>) -> InsertResult {
     }
 }
 
+/// A deliberate copy (Copy button, copy-only fallback): an ordinary clipboard entry, visible in
+/// Windows clipboard history like any copy, and read back to confirm it actually arrived.
 pub(super) fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    with_clipboard(|| set_text(text))
+    with_clipboard(|| set_text(text, Privacy::Normal))?;
+    verify_clipboard(text)
 }
 
 fn copy_only(text: &str, reason: &str) -> InsertResult {
-    match with_clipboard(|| set_text(text)) {
+    match copy_to_clipboard(text) {
         Ok(()) => InsertResult {
             outcome: InsertOutcome::CopiedOnly,
             method: "clipboard-copy".into(),
@@ -311,14 +314,25 @@ fn utf16z(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// Replace the clipboard with `text`, marked so Windows clipboard history and cloud sync skip it
-/// (dictated text may be private).
-fn set_text(text: &str) -> Result<(), String> {
+/// How a clipboard write is marked for Windows clipboard history / cloud clipboard.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Privacy {
+    /// Ordinary entry: the user asked for a copy, so it behaves like any other copy.
+    Normal,
+    /// Paste buffer that is restored right after: kept out of history, cloud sync, and monitors.
+    Transient,
+}
+
+/// Replace the clipboard with `text`.
+fn set_text(text: &str, privacy: Privacy) -> Result<(), String> {
     // SAFETY: called inside `with_clipboard`.
     unsafe {
         EmptyClipboard();
         let wide: Vec<u8> = utf16z(text).iter().flat_map(|u| u.to_le_bytes()).collect();
         put_bytes(CF_UNICODETEXT as u32, &wide)?;
+        if privacy == Privacy::Normal {
+            return Ok(());
+        }
         for name in ["ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
             let fmt = RegisterClipboardFormatW(utf16z(name).as_ptr());
             if fmt != 0 {
@@ -329,11 +343,42 @@ fn set_text(text: &str) -> Result<(), String> {
     }
 }
 
+/// Read the clipboard text back (in a fresh open, as another app would) and compare.
+fn verify_clipboard(expected: &str) -> Result<(), String> {
+    // SAFETY: `read_text` runs inside `with_clipboard`.
+    match with_clipboard(|| Ok(unsafe { read_text() })) {
+        Ok(Some(t)) if t == expected => Ok(()),
+        Ok(Some(_)) => Err("another app replaced the clipboard right away".into()),
+        Ok(None) => Err("the clipboard had no text after copying".into()),
+        Err(e) => Err(format!("could not read the clipboard back: {e}")),
+    }
+}
+
+/// CF_UNICODETEXT as a String. Caller must hold the clipboard open.
+unsafe fn read_text() -> Option<String> {
+    let h = GetClipboardData(CF_UNICODETEXT as u32);
+    if h.is_null() {
+        return None;
+    }
+    let p = GlobalLock(h) as *const u16;
+    if p.is_null() {
+        return None;
+    }
+    let max = GlobalSize(h) / 2;
+    let mut n = 0;
+    while n < max && *p.add(n) != 0 {
+        n += 1;
+    }
+    let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
+    GlobalUnlock(h);
+    Some(s)
+}
+
 fn paste(text: &str) -> Result<(), String> {
     let saved = with_clipboard(|| {
         // SAFETY: inside `with_clipboard`.
         let snap = unsafe { snapshot() };
-        set_text(text)?;
+        set_text(text, Privacy::Transient)?;
         Ok(snap)
     })?;
     // SAFETY: no preconditions.
@@ -396,29 +441,35 @@ mod tests {
     #[ignore]
     fn clipboard_round_trip_restores_previous_text() {
         let developers = with_clipboard(|| Ok(unsafe { snapshot() })).unwrap();
-        with_clipboard(|| set_text("voxelle-previous")).unwrap();
+        with_clipboard(|| set_text("voxelle-previous", Privacy::Normal)).unwrap();
         let saved = with_clipboard(|| {
             let s = unsafe { snapshot() };
-            set_text("voxelle-transcript")?;
+            set_text("voxelle-transcript", Privacy::Transient)?;
             Ok(s)
         })
         .unwrap();
         let seq = unsafe { GetClipboardSequenceNumber() };
         restore_if_unchanged(saved, seq);
-        let restored = with_clipboard(|| unsafe {
-            let h = GetClipboardData(CF_UNICODETEXT as u32);
-            let p = GlobalLock(h) as *const u16;
-            let mut n = 0;
-            while *p.add(n) != 0 {
-                n += 1;
-            }
-            let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
-            GlobalUnlock(h);
-            Ok(s)
-        })
-        .unwrap();
+        let restored = with_clipboard(|| Ok(unsafe { read_text() })).unwrap();
         // Put the developer's clipboard back before asserting.
         restore_if_unchanged(developers, unsafe { GetClipboardSequenceNumber() });
-        assert_eq!(restored, "voxelle-previous");
+        assert_eq!(restored.as_deref(), Some("voxelle-previous"));
+    }
+
+    /// The Copy button path: text lands as an ordinary entry and is verified by reading it back.
+    #[test]
+    #[ignore]
+    fn clipboard_copy_is_verified_and_has_no_privacy_markers() {
+        let developers = with_clipboard(|| Ok(unsafe { snapshot() })).unwrap();
+        let copied = copy_to_clipboard("voxelle-copy-button");
+        let history_fmt = unsafe { RegisterClipboardFormatW(utf16z("CanIncludeInClipboardHistory").as_ptr()) };
+        let has_marker = with_clipboard(|| Ok(unsafe { snapshot() }))
+            .unwrap()
+            .formats
+            .iter()
+            .any(|(f, _)| *f == history_fmt);
+        restore_if_unchanged(developers, unsafe { GetClipboardSequenceNumber() });
+        assert_eq!(copied, Ok(()));
+        assert!(!has_marker, "a deliberate copy must appear in clipboard history");
     }
 }

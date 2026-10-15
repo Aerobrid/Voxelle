@@ -14,6 +14,9 @@ pub struct SessionSnapshot {
     pub level: f32,
     pub message: Option<String>,
     pub elapsed_ms: u64,
+    /// While recording: true once the microphone has delivered audio. Bluetooth headsets can take
+    /// 1-3 s after opening; the indicator says so instead of claiming it is listening.
+    pub mic_ready: bool,
     /// Which session this snapshot belongs to (increments on every start).
     pub generation: u64,
 }
@@ -25,6 +28,7 @@ impl Default for SessionSnapshot {
             level: 0.0,
             message: None,
             elapsed_ms: 0,
+            mic_ready: false,
             generation: 0,
         }
     }
@@ -75,6 +79,7 @@ impl Session {
             self.snapshot.message = None;
             self.snapshot.level = 0.0;
             self.snapshot.elapsed_ms = 0;
+            self.snapshot.mic_ready = false;
         }
         Ok(self.snapshot())
     }
@@ -85,6 +90,10 @@ impl Session {
 
     pub fn set_level(&mut self, level: f32) {
         self.snapshot.level = level.clamp(0.0, 1.0);
+    }
+
+    pub fn set_mic_ready(&mut self, ready: bool) {
+        self.snapshot.mic_ready = ready;
     }
 
     pub fn set_elapsed_ms(&mut self, ms: u64) {
@@ -120,12 +129,14 @@ mod tests {
         s.apply(Event::Start).unwrap();
         s.set_level(0.8);
         s.set_elapsed_ms(1234);
+        s.set_mic_ready(true);
         s.set_message("x");
         s.apply(Event::Cancel).unwrap(); // -> Cancelled
         s.apply(Event::Start).unwrap(); // -> Recording resets volatiles
         let snap = s.snapshot();
         assert_eq!(snap.level, 0.0);
         assert_eq!(snap.elapsed_ms, 0);
+        assert!(!snap.mic_ready);
         assert!(snap.message.is_none());
     }
 

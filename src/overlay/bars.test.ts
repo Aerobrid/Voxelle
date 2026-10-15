@@ -12,7 +12,7 @@ describe("overlay bars", () => {
 });
 
 describe("overlay label", () => {
-  const snap = (state: any, message: string | null = null) => ({ state, level: 0, message, elapsedMs: 0, generation: 1 });
+  const snap = (state: any, message: string | null = null, micReady = true) => ({ state, level: 0, message, elapsedMs: 0, micReady, generation: 1 });
   it("never claims insertion when the text was only copied", () => {
     // A completed session with a message is the copied-only path (see dictation.rs).
     expect(overlayLabel(snap("completed", "copied because…"))).toMatch(/Copied/);
@@ -20,6 +20,8 @@ describe("overlay label", () => {
   });
   it("labels each active state", () => {
     expect(overlayLabel(snap("recording"))).toBe("Listening");
+    // Never claim to be listening before the mic delivers audio (Bluetooth start-up gap).
+    expect(overlayLabel(snap("recording", null, false))).toMatch(/Starting mic/);
     expect(overlayLabel(snap("processing"))).toMatch(/Transcribing/);
     expect(overlayLabel(snap("failed"))).toMatch(/Didn't work/);
   });
