@@ -63,7 +63,8 @@ pub fn update_settings(
     } else {
         return Err("settings patch must be an object".into());
     }
-    let merged: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
+    let mut merged: Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
+    crate::hotkeys::canonicalize(&mut merged);
     // Validate shortcuts before accepting anything, then hot-swap them into the live hook.
     let bindings = crate::hotkeys::Bindings::from_settings(&merged)?;
     let keep_mic = merged.keep_mic_ready();

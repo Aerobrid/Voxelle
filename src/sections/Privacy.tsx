@@ -18,86 +18,107 @@ export function Privacy() {
       (e) => setNote(errorText(e)),
     );
 
+  const history =
+    q.status === "ok"
+      ? q.data.storeTranscripts
+        ? q.data.retentionDays == null
+          ? "Kept until you delete it"
+          : `Kept for ${q.data.retentionDays} days`
+        : "Not stored"
+      : "—";
+
   return (
-    <div className="main">
-      <h1>Privacy</h1>
-      <p className="sub">What runs locally, what could use the network, and what is retained.</p>
-
-      <div className="card">
-        <strong>Live status</strong>
-        <p className="muted">
-          Microphone in use: <span className="mono">{recording ? "yes — recording now" : "no"}</span>
-        </p>
-        <p className="muted">
-          Dictation (hotkey → record → transcribe → insert) runs entirely on this device. It contains
-          no network code.
-        </p>
+    <div className="page">
+      <div className="page__head">
+        <h1>Privacy</h1>
+        <p className="sub">What runs on this computer, what is kept, and what could ever use the network.</p>
       </div>
 
-      <div className="card">
-        <strong>What is kept</strong>
-        {q.status === "ok" && info.status === "ok" ? (
-          <>
-            <p className="muted">
-              Transcript history:{" "}
-              <span className="mono">
-                {q.data.storeTranscripts
-                  ? q.data.retentionDays == null
-                    ? "kept until you delete it"
-                    : `kept ${q.data.retentionDays} days`
-                  : "not stored"}
-              </span>
-              {!info.data.persistent && " · database unavailable: nothing is saved to disk this session"}
-            </p>
-            <p className="muted">Audio recordings: <span className="mono">never stored</span></p>
-            <p className="muted">
-              Data folder: <span className="mono">{info.data.dataDir}</span>
-            </p>
-            <p className="muted">
-              Models folder: <span className="mono">{info.data.modelDir}</span>
-            </p>
-            <div className="actions">
-              <button className="btn" onClick={exportHistory}>
-                Export history (JSON)
-              </button>
-              <button className="btn btn--ghost" onClick={() => setSection("history")}>
-                Delete entries…
-              </button>
-              {note && <span className="muted">{note}</span>}
-            </div>
-          </>
-        ) : (
-          <p className="muted">Live values available inside the desktop app.</p>
-        )}
+      <div className="tiles">
+        <div className="tile">
+          <div className="tile__label">Microphone</div>
+          <div className="tile__value">
+            <span className={`dot ${recording ? "dot--recording" : ""}`} />
+            {recording ? "In use — recording now" : "Not in use"}
+          </div>
+        </div>
+        <div className="tile">
+          <div className="tile__label">Dictation</div>
+          <div className="tile__value">
+            <span className="dot dot--ready" />
+            100% on this device
+          </div>
+        </div>
+        <div className="tile">
+          <div className="tile__label">Transcript history</div>
+          <div className="tile__value">{history}</div>
+          {info.status === "ok" && !info.data.persistent && (
+            <div className="small error">Database unavailable — nothing is saved to disk this session.</div>
+          )}
+        </div>
+        <div className="tile">
+          <div className="tile__label">Audio recordings</div>
+          <div className="tile__value">Never stored</div>
+        </div>
       </div>
 
-      <div className="card">
-        <strong>Installed models</strong>
+      <section className="section">
+        <h2>Network</h2>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Offline mode is on. Nothing in this version makes network requests: the dictation loop contains
+          no network code. In-app model downloads (planned) will ask first and show what is contacted.
+        </p>
+      </section>
+
+      <section className="section">
+        <h2>Your data</h2>
+        <div className="card" style={{ marginTop: 10 }}>
+          {info.status === "ok" ? (
+            <>
+              <div className="tile__label">Data folder</div>
+              <div className="path">{info.data.dataDir}</div>
+              <div className="tile__label" style={{ marginTop: 10 }}>Models folder</div>
+              <div className="path">{info.data.modelDir}</div>
+            </>
+          ) : (
+            <p className="faint" style={{ margin: 0 }}>Live values are available inside the desktop app.</p>
+          )}
+          <div className="actions" style={{ marginTop: 14 }}>
+            <button className="btn" onClick={exportHistory}>
+              Export history
+            </button>
+            <button className="btn btn--ghost" onClick={() => setSection("history")}>
+              Delete entries…
+            </button>
+            {note && <span className="muted small">{note}</span>}
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <h2>Installed models</h2>
         {models.status === "ok" ? (
           models.data.filter((m) => m.installed).length === 0 ? (
-            <p className="muted">None installed.</p>
+            <p className="faint">None installed.</p>
           ) : (
             models.data
               .filter((m) => m.installed)
               .map((m) => (
-                <p className="muted small" key={m.id}>
-                  {m.name} · local · {m.integrityVerified ? "checksum verified" : "not verified yet"} ·{" "}
-                  <span className="mono">{m.path}</span>
-                </p>
+                <div className="entry" key={m.id} style={{ gridTemplateColumns: "1fr auto" }}>
+                  <div>
+                    <div>{m.name}</div>
+                    <div className="path">{m.path}</div>
+                  </div>
+                  <span className={m.integrityVerified ? "tag tag--ok" : "tag"}>
+                    {m.integrityVerified ? "Verified · local" : "Not verified yet"}
+                  </span>
+                </div>
               ))
           )
         ) : (
-          <p className="muted">Live values available inside the desktop app.</p>
+          <p className="faint">Live values are available inside the desktop app.</p>
         )}
-      </div>
-
-      <div className="card">
-        <strong>Network</strong>
-        <p className="muted">
-          Offline mode is on. No feature in this version makes network requests; in-app model
-          downloads (planned) will ask first and show what is contacted.
-        </p>
-      </div>
+      </section>
     </div>
   );
 }

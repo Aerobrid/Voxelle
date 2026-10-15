@@ -4,6 +4,7 @@ import type { Settings as SettingsT } from "../ipc/types";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
 import { ShortcutRecorder } from "../components/ShortcutRecorder";
+import { Switch } from "../components/Switch";
 
 /** Matches u32::MAX in the core: keep the mic open until the app quits. */
 const KEEP_UNTIL_QUIT = 4294967295;
@@ -24,40 +25,25 @@ const LANGUAGES: Array<[string, string]> = [
   ["ko", "Korean"],
 ];
 
-function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+/** One settings row: label + explanation on the left, the control on the right. Not a <label>,
+ *  so rows with several buttons never forward clicks to the first one. */
+function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <label className="field">
+    <div className="field">
       <span className="field__label">
-        {label}
-        {hint && <span className="muted small">{hint}</span>}
+        <span>{label}</span>
+        {hint && <span className="field__hint">{hint}</span>}
       </span>
       <span className="field__control">{children}</span>
-    </label>
+    </div>
   );
 }
 
 function Planned({ label, hint }: { label: string; hint: string }) {
   return (
-    <div className="field">
-      <span className="field__label">
-        {label}
-        <span className="muted small">{hint}</span>
-      </span>
-      <span className="tag">planned</span>
-    </div>
-  );
-}
-
-/** Like Field, but not a <label>: rows with several buttons must not forward clicks. */
-function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="field">
-      <span className="field__label">
-        {label}
-        {hint && <span className="muted small">{hint}</span>}
-      </span>
-      <span className="field__control">{children}</span>
-    </div>
+    <Row label={label} hint={hint}>
+      <span className="tag tag--soon">planned</span>
+    </Row>
   );
 }
 
@@ -82,32 +68,32 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
   return (
     <>
       {error && <div className="notice notice--error">Not saved: {error}</div>}
-      {saved && !error && <p className="muted small">Saved.</p>}
 
-      <div className="card">
-        <strong>Shortcuts</strong>
-        <p className="muted small">
-          Click <em>Change</em> and press the keys you want, including the Windows key (for example
-          Ctrl + Win). Shortcuts work while other apps are focused.
-        </p>
-        <Row label="Push-to-talk" hint="Hold to dictate, release to insert">
+      <div className="group__title">Shortcuts</div>
+      <p className="group__intro">
+        Click Change, then press the keys you want, including the Windows key (for example Ctrl + Win).
+        They work in every app.
+      </p>
+      <div className="group">
+        <Row label="Push to talk" hint="Hold to dictate, release to insert">
           <ShortcutRecorder value={s.pushToTalkHotkey} allowClear onSave={(v) => save({ pushToTalkHotkey: v })} />
         </Row>
-        <Row label="Hands-free toggle" hint="Press once to start, again to stop">
+        <Row label="Hands-free" hint="Press once to start, again to stop">
           <ShortcutRecorder value={s.toggleHotkey} allowClear={false} onSave={(v) => v && save({ toggleHotkey: v })} />
         </Row>
-        <Row label="Cancel" hint="Only while dictating; otherwise the key works as usual">
+        <Row label="Cancel" hint="Only while dictating — otherwise the key works as usual">
           <ShortcutRecorder value={s.cancelHotkey} allowClear onSave={(v) => save({ cancelHotkey: v })} />
         </Row>
       </div>
 
-      <div className="card">
-        <strong>Microphone</strong>
-        <Field label="Input device">
+      <div className="group__title">Microphone</div>
+      <div className="group">
+        <Row label="Input device" hint={devices.status === "error" ? <span className="error">{devices.error}</span> : undefined}>
           <select
             className="input"
             value={s.inputDeviceId ?? ""}
             onChange={(e) => save({ inputDeviceId: e.target.value || null })}
+            aria-label="Input device"
           >
             <option value="">System default</option>
             {devices.status === "ok" &&
@@ -118,15 +104,16 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
                 </option>
               ))}
           </select>
-        </Field>
-        <Field
+        </Row>
+        <Row
           label="Keep microphone ready"
-          hint="Leaves the mic open after a dictation so the next one starts instantly. Use it if your first words get cut off (common with Bluetooth headsets). While open, Windows shows the mic as in use and Bluetooth headsets stay in call-quality audio. Nothing is recorded until you dictate."
+          hint="Use this if your first words get cut off (common with Bluetooth headsets). While ready, Windows shows the mic as in use and Bluetooth audio drops to call quality. Nothing is recorded until you dictate."
         >
           <select
             className="input"
             value={String(s.keepMicReadySecs)}
             onChange={(e) => save({ keepMicReadySecs: Number(e.target.value) })}
+            aria-label="Keep microphone ready"
           >
             <option value="0">Off</option>
             <option value="60">For 1 minute</option>
@@ -134,42 +121,38 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
             <option value="1800">For 30 minutes</option>
             <option value={String(KEEP_UNTIL_QUIT)}>Until Voxelle quits</option>
           </select>
-        </Field>
-        {devices.status === "error" && <p className="error">{devices.error}</p>}
+        </Row>
       </div>
 
-      <div className="card">
-        <strong>Transcription</strong>
-        <Field label="Language">
-          <select className="input" value={s.language} onChange={(e) => save({ language: e.target.value })}>
+      <div className="group__title">Transcription</div>
+      <div className="group">
+        <Row label="Language">
+          <select className="input" value={s.language} onChange={(e) => save({ language: e.target.value })} aria-label="Language">
             {LANGUAGES.map(([code, name]) => (
               <option key={code} value={code}>
                 {name}
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Use GPU when available" hint="Falls back to CPU automatically if the GPU fails">
-          <input type="checkbox" checked={s.preferGpu} onChange={(e) => save({ preferGpu: e.target.checked })} />
-        </Field>
-        <Planned label="Punctuation & capitalization controls" hint="Whisper punctuates by default; overrides come later" />
+        </Row>
+        <Row label="Use the GPU" hint="Much faster when available. Falls back to the CPU automatically.">
+          <Switch label="Use the GPU" checked={s.preferGpu} onChange={(v) => save({ preferGpu: v })} />
+        </Row>
+        <Planned label="Punctuation & capitalization" hint="Automatic for now; controls come later" />
         <Planned label="Remove filler words" hint="Optional cleanup, off by default" />
       </div>
 
-      <div className="card">
-        <strong>Privacy &amp; storage</strong>
-        <Field label="Keep a history of transcripts" hint="Off = transcripts are never stored">
-          <input
-            type="checkbox"
-            checked={s.storeTranscripts}
-            onChange={(e) => save({ storeTranscripts: e.target.checked })}
-          />
-        </Field>
-        <Field label="Delete history automatically" hint="Older entries are removed on startup and after each dictation">
+      <div className="group__title">Privacy & storage</div>
+      <div className="group">
+        <Row label="Keep a history" hint="When off, transcripts are never stored">
+          <Switch label="Keep a history" checked={s.storeTranscripts} onChange={(v) => save({ storeTranscripts: v })} />
+        </Row>
+        <Row label="Delete history automatically" hint="Removes older entries at startup and after each dictation">
           <select
             className="input"
             value={s.retentionDays == null ? "" : String(s.retentionDays)}
             onChange={(e) => save({ retentionDays: e.target.value === "" ? null : Number(e.target.value) })}
+            aria-label="Delete history automatically"
           >
             <option value="">Never</option>
             <option value="1">After 1 day</option>
@@ -177,22 +160,23 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
             <option value="30">After 30 days</option>
             <option value="90">After 90 days</option>
           </select>
-        </Field>
-        <Field label="Offline mode" hint="Blocks all optional network access">
-          <input type="checkbox" checked={s.offlineMode} disabled title="Always on in this version" />
-        </Field>
+        </Row>
+        <Row label="Offline mode" hint="Blocks all optional network access. Always on in this version.">
+          <Switch label="Offline mode" checked={s.offlineMode} disabled />
+        </Row>
       </div>
 
-      <div className="card">
-        <strong>App</strong>
-        <Field
-          label="Keep running in the tray when closed"
-          hint="Shortcuts keep working with the window closed. Quit from the tray icon's menu."
-        >
-          <input type="checkbox" checked={s.closeToTray} onChange={(e) => save({ closeToTray: e.target.checked })} />
-        </Field>
+      <div className="group__title">App</div>
+      <div className="group">
+        <Row label="Keep running in the tray when closed" hint="Shortcuts keep working with the window closed. Quit from the tray icon.">
+          <Switch label="Keep running in the tray" checked={s.closeToTray} onChange={(v) => save({ closeToTray: v })} />
+        </Row>
         <Planned label="Start Voxelle when I sign in" hint="Coming soon" />
       </div>
+
+      <p className="faint small" style={{ marginTop: 16 }} aria-live="polite">
+        {saved && !error ? "Saved." : " "}
+      </p>
     </>
   );
 }
@@ -200,9 +184,11 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
 export function Settings() {
   const [q] = useCore(() => core.getSettings(), []);
   return (
-    <div className="main">
-      <h1>Settings</h1>
-      <p className="sub">Every setting here maps to real behavior. Planned options are labeled.</p>
+    <div className="page">
+      <div className="page__head">
+        <h1>Settings</h1>
+        <p className="sub">Every option here does something real; planned ones are labeled.</p>
+      </div>
       <Gate q={q}>{(s) => <SettingsForm initial={s} />}</Gate>
     </div>
   );

@@ -11,7 +11,7 @@ export function BrandMark({ size = 28 }: { size?: number }) {
   ];
   return (
     <svg
-      className="rail__logo"
+      className="brandmark"
       width={size}
       height={size}
       viewBox="0 0 40 40"

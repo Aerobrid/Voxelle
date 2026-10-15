@@ -46,7 +46,8 @@ impl AppState {
                 (Store::open_in_memory().expect("in-memory sqlite"), false)
             }
         };
-        let settings = store.load_settings().ok().flatten().unwrap_or_default();
+        let mut settings = store.load_settings().ok().flatten().unwrap_or_default();
+        crate::hotkeys::canonicalize(&mut settings);
         let keep_mic = settings.keep_mic_ready();
         let model_dir = settings.model_dir.clone().map(PathBuf::from).unwrap_or_else(|| default_model_dir.clone());
 

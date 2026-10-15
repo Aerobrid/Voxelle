@@ -21,9 +21,9 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", planned: false },
+  { id: "dashboard", label: "Home", planned: false },
   { id: "history", label: "History", planned: false },
-  { id: "models", label: "Model Manager", planned: false },
+  { id: "models", label: "Models", planned: false },
   { id: "settings", label: "Settings", planned: false },
   { id: "privacy", label: "Privacy", planned: false },
   { id: "vocabulary", label: "Vocabulary Coach", planned: true },

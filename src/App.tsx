@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { NavRail } from "./components/NavRail";
-import { StatusStrip } from "./components/StatusStrip";
+import { TitleBar } from "./components/TitleBar";
+import { Sidebar } from "./components/Sidebar";
 import { useAppStore } from "./state/store";
 import { onDictationResult, onSessionUpdate } from "./ipc/bridge";
 import { Dashboard } from "./sections/Dashboard";
@@ -11,10 +11,10 @@ import { Privacy } from "./sections/Privacy";
 import { Planned } from "./sections/Planned";
 
 const PLANNED_NOTES: Record<string, string> = {
-  vocabulary: "A local speech/vocabulary coach.",
+  vocabulary: "A local coach for your speech and vocabulary.",
   assistant: "A local voice assistant with a deny-by-default policy engine.",
   notes: "Local notes with search.",
-  "audio-import": "Transcribe imported audio files locally.",
+  "audio-import": "Transcribe audio files on this computer.",
 };
 
 export default function App() {
@@ -31,19 +31,19 @@ export default function App() {
 
   return (
     <div className="app">
-      <NavRail />
-      {section === "dashboard" && <Dashboard />}
-      {section === "history" && <History />}
-      {section === "models" && <ModelManager />}
-      {section === "settings" && <Settings />}
-      {section === "privacy" && <Privacy />}
-      {section === "vocabulary" && <Planned title="Vocabulary Coach" note={PLANNED_NOTES.vocabulary} />}
-      {section === "assistant" && <Planned title="AI Assistant" note={PLANNED_NOTES.assistant} />}
-      {section === "notes" && <Planned title="Notes" note={PLANNED_NOTES.notes} />}
-      {section === "audio-import" && (
-        <Planned title="Audio Import" note={PLANNED_NOTES["audio-import"]} />
-      )}
-      <StatusStrip />
+      <TitleBar />
+      <Sidebar />
+      <main className="main">
+        {section === "dashboard" && <Dashboard />}
+        {section === "history" && <History />}
+        {section === "models" && <ModelManager />}
+        {section === "settings" && <Settings />}
+        {section === "privacy" && <Privacy />}
+        {section === "vocabulary" && <Planned title="Vocabulary Coach" note={PLANNED_NOTES.vocabulary} />}
+        {section === "assistant" && <Planned title="AI Assistant" note={PLANNED_NOTES.assistant} />}
+        {section === "notes" && <Planned title="Notes" note={PLANNED_NOTES.notes} />}
+        {section === "audio-import" && <Planned title="Audio Import" note={PLANNED_NOTES["audio-import"]} />}
+      </main>
     </div>
   );
 }

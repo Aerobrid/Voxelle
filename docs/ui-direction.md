@@ -69,3 +69,50 @@ is used at ≥32px. A **small monochrome tray icon** likely cannot be derived cl
 5-bar mark at 16px — flagged for a simplified 2–3 bar monochrome glyph; to be confirmed when icons are
 generated (see implementation-roadmap). Derivation (SVG → PNG/ICO) needs a rasterizer dependency,
 recorded in dependencies.md when added.
+
+---
+
+## v2 direction (2026-10-15) — "quiet instrument"
+User feedback on v1: functional but looked generic/"vibe-coded" (boxed cards everywhere, debug-ish
+text, a heavy native title bar). v2 keeps the logo-derived palette and waveform motif and changes
+the *structure and finish*. It is designed from our own brand, not from any other app; no
+screenshots of the reference app are used as a spec.
+
+**Principles**
+1. **Frameless, calm chrome.** Native decorations off; our own 44 px title bar (drag region, brand
+   mark, live state, window buttons drawn as thin line glyphs). Windows 11 still supplies the
+   rounded corners and shadow. Close = hide to tray (setting).
+2. **One focal object per screen.** Home is built around the *voice orb*: a round control whose
+   inner waveform bars are driven by the real mic level, ringed by the brand gradient. Everything
+   else on the page is secondary.
+3. **Fewer boxes.** Hierarchy from type, spacing and hairline dividers; cards only where content
+   is a distinct object (a transcript, a model). Settings are grouped rows: label + one-line
+   explanation on the left, control on the right; toggles are switches.
+4. **Truthful, human copy.** No raw state names ("idle") or developer metrics up front; timings
+   live in a "Details" disclosure. Planned features are grouped under "Coming soon" in the
+   sidebar, still clearly labeled.
+5. **Real numbers only.** Home stats (words / dictations today) are computed from local history;
+   "—" when there is nothing yet.
+
+**Refined tokens** (supersede v1 where they differ)
+| Token | Value | Use |
+|---|---|---|
+| `--bg` | `#0E1224` | Window canvas (a step below the logo ink for depth) |
+| `--bg-side` | `#0B0F1E` | Sidebar + title bar |
+| `--ink` | `#101427` | Logo field color; orb core |
+| `--surface` | `rgba(255,255,255,0.035)` | Object cards |
+| `--surface-hover` | `rgba(255,255,255,0.06)` | Hover rows |
+| `--line` | `rgba(255,255,255,0.07)` | Hairlines |
+| `--grad` | `linear-gradient(135deg, #5B8CFF, #8A7CFF)` | Waveform gradient: orb ring, primary button, active nav marker |
+| radii | 8 / 12 / 18 / 999 | controls / rows / cards / pills + orb |
+
+**Typography (changed):** the platform UI font (Segoe UI Variable on Windows 11, SF on macOS,
+system sans on Linux) instead of bundling Inter: native rendering, zero bytes, nothing to fetch.
+Mono: Cascadia Mono / JetBrains Mono if installed, else the platform monospace. Scale: 26/600 page
+title, 15/600 section, 14/400 body, 12.5 meta.
+
+**Motion:** 120–180 ms ease-out for hovers and state changes; the orb ring breathes slowly only
+while recording; everything static under `prefers-reduced-motion`.
+
+**Tray glyph:** still the full-colour app icon. A simplified monochrome 3-bar glyph for 16 px is
+proposed (derived, originals untouched) and pending user approval.

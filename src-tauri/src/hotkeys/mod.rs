@@ -285,6 +285,16 @@ pub struct Bindings {
     pub cancel: Option<Binding>,
 }
 
+/// Rewrite valid shortcut strings in canonical form ("ctrl+z" → "Ctrl+Z") so the UI shows them
+/// consistently. Invalid strings are left alone (validation reports them).
+pub fn canonicalize(s: &mut crate::storage::Settings) {
+    let canon = |v: &str| parse_binding(v).map(|b| format_binding(&b)).unwrap_or_else(|_| v.to_string());
+    s.toggle_hotkey = canon(&s.toggle_hotkey);
+    for v in [&mut s.push_to_talk_hotkey, &mut s.cancel_hotkey].into_iter().flatten() {
+        *v = canon(v);
+    }
+}
+
 impl Bindings {
     pub fn from_settings(s: &crate::storage::Settings) -> Result<Self, String> {
         let parse = |label: &str, v: &Option<String>| -> Result<Option<Binding>, String> {
@@ -842,5 +852,19 @@ mod tests {
         let mut m = Matcher::default();
         assert!(m.on_key(&bind, vk::LCONTROL, true, false).actions.is_empty());
         assert!(m.on_key(&bind, b'C' as u16, true, false).actions.is_empty(), "Ctrl+C is untouched");
+    }
+
+    #[test]
+    fn canonicalizes_saved_shortcuts() {
+        let mut s = crate::storage::Settings {
+            toggle_hotkey: "ctrl+space".into(),
+            push_to_talk_hotkey: Some("Ctrl+z".into()),
+            cancel_hotkey: Some("not a key".into()),
+            ..Default::default()
+        };
+        canonicalize(&mut s);
+        assert_eq!(s.toggle_hotkey, "Ctrl+Space");
+        assert_eq!(s.push_to_talk_hotkey.as_deref(), Some("Ctrl+Z"));
+        assert_eq!(s.cancel_hotkey.as_deref(), Some("not a key"), "invalid text is left for validation");
     }
 }
