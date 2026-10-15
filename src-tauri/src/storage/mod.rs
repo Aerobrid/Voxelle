@@ -22,6 +22,8 @@ pub struct Settings {
     /// Keep the mic open this many seconds after a dictation so the next one starts instantly
     /// (Bluetooth headsets otherwise drop the first ~1-3 s). 0 = off; u32::MAX = until quit.
     pub keep_mic_ready_secs: u32,
+    /// Closing the window keeps Voxelle running in the tray (shortcuts keep working).
+    pub close_to_tray: bool,
     pub model_dir: Option<String>,
     pub selected_speech_model_id: Option<String>,
     pub toggle_hotkey: String,
@@ -43,6 +45,7 @@ impl Default for Settings {
             prefer_gpu: crate::asr::GPU_COMPILED,
             input_device_id: None,
             keep_mic_ready_secs: 0, // privacy: mic released after every dictation by default
+            close_to_tray: true,
             model_dir: None,
             selected_speech_model_id: None,
             toggle_hotkey: "Ctrl+Shift+Space".into(),

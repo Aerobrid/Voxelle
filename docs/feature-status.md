@@ -18,7 +18,9 @@ read-back. Real-voice E2E: one successful user dictation, the rest blocked by th
 | 0.1 | "Starting mic…" until first audio + slow-mic hint | experimental | `first_audio_ms` measured per recording (probe); overlay label unit-tested; not yet seen during a real Bluetooth start-up
 | 0.1 | Input device selection + level meter | experimental | `list_input_devices`, Settings dropdown, 20 Hz level events; not yet observed |
 | 0.1 | Device-disconnect recovery | experimental | cpal error → `disconnected` flag → session Failed + mic released; not exercised |
-| 0.1 | Global toggle / push-to-talk / cancel (Windows) | experimental | WH_KEYBOARD_LL hook + pure matcher (11 tests); not yet exercised in the app |
+| 0.1 | Global toggle / push-to-talk / cancel (Windows) | experimental | WH_KEYBOARD_LL hook + pure matcher (16 tests incl. Ctrl+Win chords + Start-menu mask). User's toggle hotkey started/stopped a real dictation once (2026-10-15); PTT/cancel/chords not yet exercised by a person |
+| 0.1 | Shortcut recorder (press keys, incl. Win) | implemented (capture) / experimental (UI) | `hotkeys/capture.rs` 8 tests; in the running app a physical key press during a recording came back as `done: "Left"` via the `shortcut_capture` event. Settings "Change" flow not yet clicked by a person; 15 s timeout not yet observed |
+| 0.1 | Tray icon, close-to-tray, single instance | implemented (window/instance) / experimental (tray menu) | 2026-10-15 real app: WM_CLOSE → window hidden, process alive; launching a 2nd instance → 1 process, window shown. Tray created without error; menu items not yet clicked |
 | 0.1 | Recording indicator overlay | experimental | window verified created hidden with WS_EX_NOACTIVATE + WS_EX_TRANSPARENT (click-through) + topmost; showing during a session not yet observed
 | 0.1 | Mic released on stop/cancel/error/exit | experimental | stop verified (`mic_probe`: is_capturing=false); cancel/error/exit paths not yet observed
 | 0.1 | Clear mic-permission error | experimental | cpal PermissionDenied → message; not exercised |

@@ -188,3 +188,24 @@ Append-only record of non-obvious choices. Format: date — decision — why —
 - **Decision:** Copy buttons and the copy-only fallback write a normal clipboard entry and read it
   back before reporting success. Only the transient paste buffer (restored ~450 ms later) keeps the
   history/cloud/monitor exclusion flags.
+
+## 2026-10-15 — Shortcuts are recorded by pressing keys (incl. Win), not typed
+- User feedback: typing shortcut names is clumsy, and Win/Ctrl+Win could not be configured.
+- **Decision:** a recorder in the core's existing WH_KEYBOARD_LL hook. While recording, every
+  physical key goes to a pure state machine (`hotkeys/capture.rs`, tested) and is swallowed, so Win
+  does not open Start. The shortcut is the largest set of keys held at once, finalized on release.
+  Recording ends itself after 15 s so a lost UI can never leave the keyboard swallowed.
+- **New binding kind:** modifier chords (2+ modifiers, e.g. Ctrl+Win), usable for push-to-talk,
+  toggle (fires on clean release), and cancel. Pressing another key while the chord is held
+  (Ctrl+Win+Right = switch desktop) cancels quietly and the system shortcut still works. A single
+  generic modifier ("Ctrl") stays rejected; single modifiers are side-specific (RightCtrl).
+- **Start-menu masking:** when a binding that leaves Win held fires, we tap an unassigned virtual
+  key (0xE8) from a short-lived thread so releasing Win does not open Start (our hook ignores
+  injected keys, so the mask can never trigger anything).
+
+## 2026-10-15 — Tray + close-to-tray + single instance
+- Closing the window hides it (setting "Keep running in the tray when closed", **default on**, as
+  the user asked); shortcuts keep working. Tray: left-click opens; menu = Open / Start-stop
+  dictation / Quit. A second launch shows the running instance (tauri-plugin-single-instance)
+  instead of installing a second keyboard hook. Tray icon = the app icon for now; a dedicated small
+  monochrome tray glyph is a pending branding item (see ui-direction).

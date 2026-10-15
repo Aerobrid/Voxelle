@@ -114,6 +114,7 @@ export interface Settings {
   preferGpu: boolean;
   inputDeviceId: string | null; // null = system default microphone
   keepMicReadySecs: number; // 0 = release mic after each dictation; 4294967295 = until quit
+  closeToTray: boolean; // closing the window keeps Voxelle running in the tray
   modelDir: string | null;
   selectedSpeechModelId: string | null;
   toggleHotkey: string;
@@ -128,3 +129,9 @@ export interface StorageInfo {
   dataDir: string;
   modelDir: string;
 }
+
+/** Shortcut recorder updates (src-tauri/src/hotkeys/capture.rs `CaptureUpdate`). */
+export type ShortcutCaptureUpdate =
+  | { kind: "progress"; keys: string }
+  | { kind: "done"; shortcut: string }
+  | { kind: "rejected"; reason: string };

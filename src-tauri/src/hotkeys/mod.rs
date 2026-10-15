@@ -3,6 +3,7 @@
 //! tested; `windows.rs` feeds real key events in. Key codes are Windows virtual-key codes, which
 //! other platform adapters translate into.
 
+pub mod capture;
 #[cfg(windows)]
 mod windows;
 
@@ -26,12 +27,31 @@ pub struct Mods {
     pub win: bool,
 }
 
+impl Mods {
+    fn count(&self) -> usize {
+        [self.ctrl, self.shift, self.alt, self.win].iter().filter(|b| **b).count()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Binding {
     /// Modifiers + one non-modifier key, e.g. Ctrl+Shift+Space. Matches exact modifiers.
     Combo { mods: Mods, vk: u16 },
     /// A single side-specific modifier held on its own, e.g. RightCtrl (push-to-talk friendly).
     ModifierOnly { vk: u16 },
+    /// Two or more modifiers held together with no other key, e.g. Ctrl+Win (either side).
+    ModifierChord { mods: Mods },
+}
+
+impl Binding {
+    /// Holding the Windows key and releasing it without another key opens the Start menu, so
+    /// bindings that leave Win held need a masking key event when they fire.
+    fn holds_win(&self) -> bool {
+        match *self {
+            Binding::ModifierOnly { vk } => matches!(vk, vk::LWIN | vk::RWIN),
+            Binding::ModifierChord { mods } | Binding::Combo { mods, .. } => mods.win,
+        }
+    }
 }
 
 pub mod vk {
@@ -42,19 +62,50 @@ pub mod vk {
     pub const CONTROL: u16 = 0x11;
     pub const MENU: u16 = 0x12;
     pub const PAUSE: u16 = 0x13;
+    pub const CAPITAL: u16 = 0x14;
     pub const ESCAPE: u16 = 0x1B;
     pub const SPACE: u16 = 0x20;
+    pub const PRIOR: u16 = 0x21;
+    pub const NEXT: u16 = 0x22;
+    pub const END: u16 = 0x23;
+    pub const HOME: u16 = 0x24;
+    pub const LEFT: u16 = 0x25;
+    pub const UP: u16 = 0x26;
+    pub const RIGHT: u16 = 0x27;
+    pub const DOWN: u16 = 0x28;
+    pub const SNAPSHOT: u16 = 0x2C;
     pub const INSERT: u16 = 0x2D;
+    pub const DELETE: u16 = 0x2E;
     pub const LWIN: u16 = 0x5B;
     pub const RWIN: u16 = 0x5C;
+    pub const APPS: u16 = 0x5D;
+    pub const NUMPAD0: u16 = 0x60;
+    pub const MULTIPLY: u16 = 0x6A;
+    pub const ADD: u16 = 0x6B;
+    pub const SUBTRACT: u16 = 0x6D;
+    pub const DECIMAL: u16 = 0x6E;
+    pub const DIVIDE: u16 = 0x6F;
     pub const F1: u16 = 0x70;
+    pub const SCROLL: u16 = 0x91;
     pub const LSHIFT: u16 = 0xA0;
     pub const RSHIFT: u16 = 0xA1;
     pub const LCONTROL: u16 = 0xA2;
     pub const RCONTROL: u16 = 0xA3;
     pub const LMENU: u16 = 0xA4;
     pub const RMENU: u16 = 0xA5;
+    pub const OEM_1: u16 = 0xBA; // ; :
+    pub const OEM_PLUS: u16 = 0xBB; // = +
+    pub const OEM_COMMA: u16 = 0xBC;
+    pub const OEM_MINUS: u16 = 0xBD;
+    pub const OEM_PERIOD: u16 = 0xBE;
+    pub const OEM_2: u16 = 0xBF; // / ?
     pub const OEM_3: u16 = 0xC0; // ` ~
+    pub const OEM_4: u16 = 0xDB; // [ {
+    pub const OEM_5: u16 = 0xDC; // \ |
+    pub const OEM_6: u16 = 0xDD; // ] }
+    pub const OEM_7: u16 = 0xDE; // ' "
+    /// Unassigned virtual key, sent so that releasing Win after a shortcut does not open Start.
+    pub const MASK: u16 = 0xE8;
 }
 
 fn is_modifier(code: u16) -> bool {
@@ -71,46 +122,109 @@ pub enum ParseError {
     Empty,
     #[error("unknown key '{0}'")]
     UnknownKey(String),
-    #[error("a shortcut needs exactly one non-modifier key (or a single side-specific modifier like RightCtrl)")]
+    #[error("use one key plus optional modifiers (Ctrl+Shift+Space), two or more modifiers together (Ctrl+Win), or one side-specific modifier (RightCtrl)")]
     NeedsOneKey,
     #[error("'{0}' cannot be used as a shortcut key")]
     Reserved(String),
 }
 
+/// Canonical display name first, then accepted aliases. Used for both parsing and formatting.
+const KEY_NAMES: &[(u16, &[&str])] = &[
+    (vk::SPACE, &["Space"]),
+    (vk::ESCAPE, &["Escape", "Esc"]),
+    (vk::INSERT, &["Insert"]),
+    (vk::DELETE, &["Delete", "Del"]),
+    (vk::HOME, &["Home"]),
+    (vk::END, &["End"]),
+    (vk::PRIOR, &["PageUp"]),
+    (vk::NEXT, &["PageDown"]),
+    (vk::LEFT, &["Left"]),
+    (vk::RIGHT, &["Right"]),
+    (vk::UP, &["Up"]),
+    (vk::DOWN, &["Down"]),
+    (vk::PAUSE, &["Pause"]),
+    (vk::SCROLL, &["ScrollLock"]),
+    (vk::CAPITAL, &["CapsLock"]),
+    (vk::SNAPSHOT, &["PrintScreen"]),
+    (vk::APPS, &["Menu", "Apps"]),
+    (vk::OEM_3, &["Backquote", "`"]),
+    (vk::OEM_MINUS, &["Minus", "-"]),
+    (vk::OEM_PLUS, &["Equal", "="]),
+    (vk::OEM_4, &["BracketLeft", "["]),
+    (vk::OEM_6, &["BracketRight", "]"]),
+    (vk::OEM_5, &["Backslash", "\\"]),
+    (vk::OEM_1, &["Semicolon", ";"]),
+    (vk::OEM_7, &["Quote", "'"]),
+    (vk::OEM_COMMA, &["Comma", ","]),
+    (vk::OEM_PERIOD, &["Period", "."]),
+    (vk::OEM_2, &["Slash", "/"]),
+    (vk::MULTIPLY, &["NumpadMultiply"]),
+    (vk::ADD, &["NumpadAdd"]),
+    (vk::SUBTRACT, &["NumpadSubtract"]),
+    (vk::DECIMAL, &["NumpadDecimal"]),
+    (vk::DIVIDE, &["NumpadDivide"]),
+    (vk::LCONTROL, &["LeftCtrl", "LCtrl"]),
+    (vk::RCONTROL, &["RightCtrl", "RCtrl"]),
+    (vk::LSHIFT, &["LeftShift", "LShift"]),
+    (vk::RSHIFT, &["RightShift", "RShift"]),
+    (vk::LMENU, &["LeftAlt", "LAlt"]),
+    (vk::RMENU, &["RightAlt", "RAlt", "AltGr"]),
+    (vk::LWIN, &["LeftWin", "LWin"]),
+    (vk::RWIN, &["RightWin", "RWin"]),
+];
+
+/// Keys that would submit forms / move focus / delete text if a shortcut swallowed them.
+const RESERVED: &[(u16, &[&str])] = &[
+    (vk::RETURN, &["Enter", "Return"]),
+    (vk::TAB, &["Tab"]),
+    (vk::BACK, &["Backspace"]),
+];
+
 fn named_key(name: &str) -> Option<u16> {
+    if let Some((code, _)) = KEY_NAMES
+        .iter()
+        .find(|(_, names)| names.iter().any(|n| n.eq_ignore_ascii_case(name)))
+    {
+        return Some(*code);
+    }
     let n = name.to_ascii_lowercase();
-    let code = match n.as_str() {
-        "space" => vk::SPACE,
-        "esc" | "escape" => vk::ESCAPE,
-        "insert" => vk::INSERT,
-        "pause" => vk::PAUSE,
-        "backquote" | "`" => vk::OEM_3,
-        "leftctrl" | "lctrl" => vk::LCONTROL,
-        "rightctrl" | "rctrl" => vk::RCONTROL,
-        "leftshift" | "lshift" => vk::LSHIFT,
-        "rightshift" | "rshift" => vk::RSHIFT,
-        "leftalt" | "lalt" => vk::LMENU,
-        "rightalt" | "ralt" | "altgr" => vk::RMENU,
-        "leftwin" | "lwin" => vk::LWIN,
-        "rightwin" | "rwin" => vk::RWIN,
-        "enter" | "return" | "tab" | "backspace" => return None,
-        _ => {
-            let b = n.as_bytes();
-            if b.len() == 1 && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit()) {
-                return Some(b[0].to_ascii_uppercase() as u16);
-            }
-            if let Some(num) = n.strip_prefix('f').and_then(|d| d.parse::<u16>().ok()) {
-                if (1..=24).contains(&num) {
-                    return Some(vk::F1 + num - 1);
-                }
-            }
-            return None;
+    let b = n.as_bytes();
+    if b.len() == 1 && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit()) {
+        return Some(b[0].to_ascii_uppercase() as u16);
+    }
+    if let Some(num) = n.strip_prefix("numpad").and_then(|d| d.parse::<u16>().ok()) {
+        if num <= 9 {
+            return Some(vk::NUMPAD0 + num);
         }
-    };
-    Some(code)
+    }
+    if let Some(num) = n.strip_prefix('f').and_then(|d| d.parse::<u16>().ok()) {
+        if (1..=24).contains(&num) {
+            return Some(vk::F1 + num - 1);
+        }
+    }
+    None
 }
 
-/// Parse "Ctrl+Shift+Space", "CommandOrControl+Shift+Space", "RightCtrl", "F9" (case-insensitive).
+/// Display name for a virtual key, or None if shortcuts cannot use it.
+pub fn key_name(code: u16) -> Option<String> {
+    if let Some((_, names)) = KEY_NAMES.iter().find(|(c, _)| *c == code) {
+        return Some(names[0].to_string());
+    }
+    match code {
+        0x30..=0x39 | 0x41..=0x5A => Some((code as u8 as char).to_string()),
+        c if (vk::NUMPAD0..=vk::NUMPAD0 + 9).contains(&c) => Some(format!("Numpad{}", c - vk::NUMPAD0)),
+        c if (vk::F1..vk::F1 + 24).contains(&c) => Some(format!("F{}", c - vk::F1 + 1)),
+        _ => None,
+    }
+}
+
+/// Name of a reserved key (Enter/Tab/Backspace), if `code` is one.
+pub fn reserved_name(code: u16) -> Option<&'static str> {
+    RESERVED.iter().find(|(c, _)| *c == code).map(|(_, names)| names[0])
+}
+
+/// Parse "Ctrl+Shift+Space", "CommandOrControl+Shift+Space", "RightCtrl", "Ctrl+Win", "F9"
+/// (case-insensitive).
 pub fn parse_binding(s: &str) -> Result<Binding, ParseError> {
     let parts: Vec<&str> = s.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
     if parts.is_empty() {
@@ -124,14 +238,43 @@ pub fn parse_binding(s: &str) -> Result<Binding, ParseError> {
             "shift" => mods.shift = true,
             "alt" | "option" => mods.alt = true,
             "win" | "super" | "meta" | "cmd" | "command" => mods.win = true,
-            "enter" | "return" | "tab" | "backspace" => return Err(ParseError::Reserved((*p).into())),
-            _ => keys.push(named_key(p).ok_or_else(|| ParseError::UnknownKey((*p).into()))?),
+            _ => {
+                let reserved = RESERVED
+                    .iter()
+                    .find(|(_, names)| names.iter().any(|n| n.eq_ignore_ascii_case(p)));
+                if let Some((_, names)) = reserved {
+                    return Err(ParseError::Reserved(names[0].into()));
+                }
+                keys.push(named_key(p).ok_or_else(|| ParseError::UnknownKey((*p).into()))?)
+            }
         }
     }
     match keys.as_slice() {
+        [] if mods.count() >= 2 => Ok(Binding::ModifierChord { mods }),
         [k] if is_modifier(*k) && mods == Mods::default() => Ok(Binding::ModifierOnly { vk: *k }),
         [k] if !is_modifier(*k) => Ok(Binding::Combo { mods, vk: *k }),
         _ => Err(ParseError::NeedsOneKey),
+    }
+}
+
+fn mods_names(m: Mods) -> Vec<String> {
+    [(m.ctrl, "Ctrl"), (m.win, "Win"), (m.alt, "Alt"), (m.shift, "Shift")]
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, n)| n.to_string())
+        .collect()
+}
+
+/// Canonical text for a binding; `parse_binding(&format_binding(b)) == Ok(b)`.
+pub fn format_binding(b: &Binding) -> String {
+    match *b {
+        Binding::Combo { mods, vk } => {
+            let mut parts = mods_names(mods);
+            parts.push(key_name(vk).unwrap_or_else(|| format!("0x{vk:02X}")));
+            parts.join("+")
+        }
+        Binding::ModifierOnly { vk } => key_name(vk).unwrap_or_default(),
+        Binding::ModifierChord { mods } => mods_names(mods).join("+"),
     }
 }
 
@@ -179,7 +322,7 @@ pub enum Action {
 pub struct Matcher {
     held: Mods,
     ptt_down: bool,
-    /// Modifier-only toggle key is down and no other key was pressed since (fires on release).
+    /// Modifier-only / chord toggle is held and no other key was pressed since (fires on release).
     toggle_mod_clean: Option<bool>,
     /// Non-modifier keys whose down event we swallowed; their up event must be swallowed too.
     swallowed: Vec<u16>,
@@ -199,6 +342,8 @@ pub struct Outcome {
     pub actions: Vec<Action>,
     /// Hide this key event from the focused app.
     pub swallow: bool,
+    /// A binding that holds Win just fired: send a masking key so releasing Win does not open Start.
+    pub mask_win: bool,
 }
 
 impl Matcher {
@@ -206,16 +351,20 @@ impl Matcher {
     pub fn on_key(&mut self, b: &Bindings, code: u16, down: bool, session_active: bool) -> Outcome {
         let mut actions = Vec::new();
         let mut swallow = false;
+        let mut mask_win = false;
         let was_held = self.held;
         if let Some(slot) = mod_slot(code) {
             *slot(&mut self.held) = down;
         }
+        // A modifier chord (e.g. Ctrl+Win) just became exactly what is held.
+        let chord_completed = |mods: Mods| down && is_modifier(code) && self.held == mods && was_held != mods;
 
         match b.push_to_talk {
             Some(Binding::ModifierOnly { vk }) => {
                 if code == vk {
                     if down && !self.ptt_down {
                         self.ptt_down = true;
+                        mask_win |= b.push_to_talk.is_some_and(|p| p.holds_win());
                         actions.push(Action::PttPressed);
                     } else if !down && self.ptt_down {
                         self.ptt_down = false;
@@ -226,10 +375,25 @@ impl Matcher {
                     actions.push(Action::PttChord);
                 }
             }
+            Some(Binding::ModifierChord { mods }) => {
+                if !self.ptt_down && chord_completed(mods) {
+                    self.ptt_down = true;
+                    mask_win |= mods.win;
+                    actions.push(Action::PttPressed);
+                } else if self.ptt_down && !down && mod_slot(code).is_some() && self.held != mods {
+                    self.ptt_down = false;
+                    actions.push(Action::PttReleased);
+                } else if self.ptt_down && down && code != vk::MASK && (!is_modifier(code) || self.held != mods) {
+                    // Ctrl+Win+D, or an extra modifier: the user is using a system shortcut.
+                    self.ptt_down = false;
+                    actions.push(Action::PttChord);
+                }
+            }
             Some(Binding::Combo { mods, vk }) => {
                 if down && code == vk && was_held == mods && !self.ptt_down {
                     self.ptt_down = true;
                     swallow = true;
+                    mask_win |= mods.win;
                     actions.push(Action::PttPressed);
                 } else if down && code == vk && self.ptt_down {
                     swallow = true; // key repeat while held
@@ -241,32 +405,69 @@ impl Matcher {
             None => {}
         }
 
-        if let Some(Binding::Combo { mods, vk }) = b.toggle {
-            if down && code == vk && was_held == mods {
-                swallow = true;
-                if !self.swallowed.contains(&code) {
-                    actions.push(Action::Toggle); // ignore auto-repeat
+        match b.toggle {
+            Some(Binding::Combo { mods, vk }) => {
+                if down && code == vk && was_held == mods {
+                    swallow = true;
+                    if !self.swallowed.contains(&code) {
+                        mask_win |= mods.win;
+                        actions.push(Action::Toggle); // ignore auto-repeat
+                    }
                 }
             }
-        }
-        if let Some(Binding::ModifierOnly { vk }) = b.toggle {
-            // Fire on release, and only if no other key was pressed meanwhile (not part of a chord).
-            if code == vk {
-                if down && self.toggle_mod_clean.is_none() {
+            Some(Binding::ModifierOnly { vk }) => {
+                // Fire on release, and only if no other key was pressed meanwhile (not part of a chord).
+                if code == vk {
+                    if down && self.toggle_mod_clean.is_none() {
+                        self.toggle_mod_clean = Some(true);
+                        mask_win |= b.toggle.is_some_and(|t| t.holds_win());
+                    } else if !down && self.toggle_mod_clean.take() == Some(true) {
+                        actions.push(Action::Toggle);
+                    }
+                } else if down && self.toggle_mod_clean.is_some() {
+                    self.toggle_mod_clean = Some(false);
+                }
+            }
+            Some(Binding::ModifierChord { mods }) => {
+                // Fire when the chord is released, unless another key joined it in between.
+                if chord_completed(mods) && self.toggle_mod_clean.is_none() {
                     self.toggle_mod_clean = Some(true);
-                } else if !down && self.toggle_mod_clean.take() == Some(true) {
-                    actions.push(Action::Toggle);
+                    mask_win |= mods.win;
+                } else if self.toggle_mod_clean.is_some() {
+                    if down && code != vk::MASK && (!is_modifier(code) || self.held != mods) {
+                        self.toggle_mod_clean = Some(false);
+                    } else if !down && mod_slot(code).is_some() && self.held != mods {
+                        if self.toggle_mod_clean.take() == Some(true) {
+                            actions.push(Action::Toggle);
+                        }
+                    }
                 }
-            } else if down && self.toggle_mod_clean.is_some() {
-                self.toggle_mod_clean = Some(false);
+                if self.held == Mods::default() {
+                    self.toggle_mod_clean = None; // everything released: re-arm
+                }
             }
+            None => {}
         }
 
-        if let Some(Binding::Combo { mods, vk }) = b.cancel {
-            if down && code == vk && was_held == mods && session_active {
-                swallow = true;
-                actions.push(Action::Cancel);
+        match b.cancel {
+            Some(Binding::Combo { mods, vk }) => {
+                if down && code == vk && was_held == mods && session_active {
+                    swallow = true;
+                    actions.push(Action::Cancel);
+                }
             }
+            Some(Binding::ModifierChord { mods }) => {
+                if session_active && chord_completed(mods) {
+                    mask_win |= mods.win;
+                    actions.push(Action::Cancel);
+                }
+            }
+            Some(Binding::ModifierOnly { vk }) => {
+                if down && code == vk && session_active && !was_held_key(was_held, code) {
+                    actions.push(Action::Cancel);
+                }
+            }
+            None => {}
         }
 
         if down && swallow && !is_modifier(code) && !self.swallowed.contains(&code) {
@@ -278,8 +479,14 @@ impl Matcher {
                 swallow = true;
             }
         }
-        Outcome { actions, swallow }
+        Outcome { actions, swallow, mask_win }
     }
+}
+
+/// True if this modifier's slot was already down (auto-repeat of a held modifier).
+fn was_held_key(was_held: Mods, code: u16) -> bool {
+    let mut m = was_held;
+    mod_slot(code).is_some_and(|slot| *slot(&mut m))
 }
 
 // ---------- runtime ----------
@@ -336,6 +543,48 @@ pub fn start(app: &AppHandle, bindings: Bindings) -> Result<SharedBindings, Stri
         return Err("Global shortcuts are not implemented on this platform yet.".into());
     }
     Ok(shared)
+}
+
+pub const CAPTURE_EVENT: &str = "shortcut_capture";
+/// The recorder swallows every key, so it must never stay on if the UI goes away.
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(15);
+static CAPTURE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Start recording a shortcut: the next keys pressed (until all are released) are reported to the
+/// UI as `CAPTURE_EVENT` updates and do nothing else. Ends by itself after `CAPTURE_TIMEOUT`.
+pub fn begin_capture(app: &AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+    let generation = CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    #[cfg(windows)]
+    {
+        let sink_app = app.clone();
+        windows::begin_capture(Box::new(move |u| {
+            let _ = sink_app.emit(CAPTURE_EVENT, u);
+        }))?;
+    }
+    #[cfg(not(windows))]
+    return Err("Recording shortcuts is not implemented on this platform yet.".into());
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(CAPTURE_TIMEOUT);
+        if CAPTURE_GENERATION.load(Ordering::SeqCst) == generation && end_capture() {
+            let _ = app.emit(
+                CAPTURE_EVENT,
+                capture::CaptureUpdate::Rejected { reason: "No keys were pressed in time.".into() },
+            );
+        }
+    });
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
+/// Stop recording. Returns true if a recording was still in progress.
+pub fn end_capture() -> bool {
+    #[cfg(windows)]
+    return windows::end_capture();
+    #[cfg(not(windows))]
+    false
 }
 
 fn run_worker(app: AppHandle, rx: mpsc::Receiver<Queued>) {
@@ -416,7 +665,7 @@ mod tests {
     #[test]
     fn rejects_bad_shortcuts() {
         assert_eq!(parse_binding(""), Err(ParseError::Empty));
-        assert_eq!(parse_binding("Ctrl+Shift"), Err(ParseError::NeedsOneKey));
+        assert!(matches!(parse_binding("Ctrl+Shift"), Ok(Binding::ModifierChord { .. })), "two modifiers = chord");
         assert_eq!(parse_binding("Ctrl+A+B"), Err(ParseError::NeedsOneKey));
         assert!(matches!(parse_binding("Ctrl+Enter"), Err(ParseError::Reserved(_))));
         assert!(matches!(parse_binding("Ctrl+Nope"), Err(ParseError::UnknownKey(_))));
@@ -527,5 +776,71 @@ mod tests {
         assert_eq!(o.actions, vec![Action::Cancel]);
         assert!(o.swallow);
         assert!(m.on_key(&bind, vk::ESCAPE, false, false).swallow);
+    }
+
+    #[test]
+    fn parses_and_formats_modifier_chords() {
+        let chord = parse_binding("win+ctrl").unwrap();
+        assert_eq!(chord, Binding::ModifierChord { mods: Mods { ctrl: true, win: true, ..Default::default() } });
+        assert_eq!(format_binding(&chord), "Ctrl+Win");
+        assert_eq!(parse_binding("Ctrl"), Err(ParseError::NeedsOneKey), "one generic modifier is ambiguous");
+        for s in ["Ctrl+Shift+Space", "RightCtrl", "Ctrl+Win", "Alt+F4", "Ctrl+Backquote", "Numpad5", "PageDown"] {
+            assert_eq!(format_binding(&parse_binding(s).unwrap()), s);
+        }
+    }
+
+    #[test]
+    fn chord_ptt_presses_in_any_order_and_masks_start_menu() {
+        let bind = b("F9", Some("Ctrl+Win"), None);
+        let mut m = Matcher::default();
+        assert!(m.on_key(&bind, vk::LWIN, true, false).actions.is_empty());
+        let o = m.on_key(&bind, vk::LCONTROL, true, false);
+        assert_eq!(o.actions, vec![Action::PttPressed]);
+        assert!(o.mask_win, "releasing Win later must not open Start");
+        assert!(!o.swallow, "modifiers are never swallowed");
+        assert!(m.on_key(&bind, vk::LCONTROL, true, false).actions.is_empty(), "repeat ignored");
+        assert!(m.on_key(&bind, vk::MASK, true, false).actions.is_empty(), "our mask key is not a chord");
+        assert_eq!(m.on_key(&bind, vk::LWIN, false, false).actions, vec![Action::PttReleased]);
+        assert!(m.on_key(&bind, vk::LCONTROL, false, false).actions.is_empty());
+    }
+
+    #[test]
+    fn chord_ptt_used_for_a_system_shortcut_is_cancelled() {
+        let bind = b("F9", Some("Ctrl+Win"), None);
+        let mut m = Matcher::default();
+        m.on_key(&bind, vk::LCONTROL, true, false);
+        m.on_key(&bind, vk::LWIN, true, false);
+        let o = m.on_key(&bind, vk::RIGHT, true, false); // Ctrl+Win+Right = switch desktop
+        assert_eq!(o.actions, vec![Action::PttChord]);
+        assert!(!o.swallow, "the system shortcut must still work");
+    }
+
+    #[test]
+    fn chord_toggle_fires_on_clean_release_only() {
+        let bind = b("Ctrl+Win", None, None);
+        let mut m = Matcher::default();
+        m.on_key(&bind, vk::LCONTROL, true, false);
+        assert!(m.on_key(&bind, vk::LWIN, true, false).mask_win);
+        assert_eq!(m.on_key(&bind, vk::LWIN, false, false).actions, vec![Action::Toggle]);
+        assert!(m.on_key(&bind, vk::LCONTROL, false, false).actions.is_empty(), "fires once");
+        // Ctrl+Win+D (show desktop) must not toggle.
+        m.on_key(&bind, vk::LCONTROL, true, false);
+        m.on_key(&bind, vk::LWIN, true, false);
+        m.on_key(&bind, b'D' as u16, true, false);
+        m.on_key(&bind, b'D' as u16, false, false);
+        assert!(m.on_key(&bind, vk::LWIN, false, false).actions.is_empty());
+        m.on_key(&bind, vk::LCONTROL, false, false);
+        // Re-armed after everything was released.
+        m.on_key(&bind, vk::LCONTROL, true, false);
+        m.on_key(&bind, vk::LWIN, true, false);
+        assert_eq!(m.on_key(&bind, vk::LCONTROL, false, false).actions, vec![Action::Toggle]);
+    }
+
+    #[test]
+    fn ctrl_alone_does_not_trigger_ctrl_win_chord() {
+        let bind = b("F9", Some("Ctrl+Win"), None);
+        let mut m = Matcher::default();
+        assert!(m.on_key(&bind, vk::LCONTROL, true, false).actions.is_empty());
+        assert!(m.on_key(&bind, b'C' as u16, true, false).actions.is_empty(), "Ctrl+C is untouched");
     }
 }

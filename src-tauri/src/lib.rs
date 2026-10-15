@@ -12,6 +12,7 @@ pub mod net;
 pub mod overlay;
 pub mod session;
 pub mod storage;
+pub mod tray;
 
 use tauri::Manager;
 
@@ -45,6 +46,8 @@ fn select_default_model(state: &AppState) {
 
 pub fn run() {
     tauri::Builder::default()
+        // Must be first: a second launch hands over to the running instance and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .setup(|app| {
             let model_dir = app.path().app_local_data_dir()?.join("models");
             std::fs::create_dir_all(&model_dir)?;
@@ -56,6 +59,9 @@ pub fn run() {
             dictation::preload_selected_model(app.handle());
             let bindings = hotkeys::Bindings::from_settings(&state.settings.lock().unwrap())
                 .unwrap_or_default();
+            if let Err(e) = tray::create(app.handle()) {
+                eprintln!("[voxelle] tray icon unavailable: {e}");
+            }
             if let Err(e) = overlay::create(app.handle()) {
                 eprintln!("[voxelle] recording indicator unavailable: {e}");
             }
@@ -86,6 +92,8 @@ pub fn run() {
             commands::get_model_dir,
             commands::export_history,
             commands::storage_info,
+            commands::start_shortcut_capture,
+            commands::cancel_shortcut_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Voxelle");

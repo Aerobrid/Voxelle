@@ -232,3 +232,15 @@ pub fn set_history_edit(
 pub fn get_model_dir(state: State<AppState>) -> String {
     state.model_dir().display().to_string()
 }
+
+/// Record the next shortcut the user presses (see hotkeys::begin_capture); results arrive as
+/// `shortcut_capture` events. Saving is a separate `update_settings` call.
+#[tauri::command]
+pub fn start_shortcut_capture(app: AppHandle) -> Result<(), String> {
+    crate::hotkeys::begin_capture(&app)
+}
+
+#[tauri::command]
+pub fn cancel_shortcut_capture() {
+    crate::hotkeys::end_capture();
+}

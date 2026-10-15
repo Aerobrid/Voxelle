@@ -11,6 +11,7 @@ import type {
   ModelInfo,
   SessionSnapshot,
   Settings,
+  ShortcutCaptureUpdate,
   StorageInfo,
 } from "./types";
 
@@ -50,6 +51,15 @@ export async function onDictationResult(
   return listen<DictationResult>("dictation_result", (e) => handler(e.payload));
 }
 
+/** Updates from the shortcut recorder (see `core.startShortcutCapture`). */
+export async function onShortcutCapture(
+  handler: (u: ShortcutCaptureUpdate) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<ShortcutCaptureUpdate>("shortcut_capture", (e) => handler(e.payload));
+}
+
 export const core = {
   getSessionSnapshot: () => call<SessionSnapshot>("get_session_snapshot"),
   startDictation: () => call<void>("start_dictation"),
@@ -75,4 +85,8 @@ export const core = {
   copyText: (text: string) => call<void>("copy_text", { text }),
   setHistoryEdit: (id: string, editedText: string | null) =>
     call<HistoryEntry>("set_history_edit", { id, editedText }),
+
+  /** Record the next keys pressed as a shortcut; updates arrive via onShortcutCapture. */
+  startShortcutCapture: () => call<void>("start_shortcut_capture"),
+  cancelShortcutCapture: () => call<void>("cancel_shortcut_capture"),
 };

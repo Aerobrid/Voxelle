@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { core } from "../ipc/bridge";
 import type { Settings as SettingsT } from "../ipc/types";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
+import { ShortcutRecorder } from "../components/ShortcutRecorder";
 
 /** Matches u32::MAX in the core: keep the mic open until the app quits. */
 const KEEP_UNTIL_QUIT = 4294967295;
@@ -47,32 +48,16 @@ function Planned({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-/** Text input that commits on blur/Enter so shortcuts are validated once, not per keystroke. */
-function ShortcutInput({
-  value,
-  onCommit,
-  allowEmpty,
-}: {
-  value: string | null;
-  onCommit: (v: string | null) => void;
-  allowEmpty: boolean;
-}) {
-  const [draft, setDraft] = useState(value ?? "");
-  useEffect(() => setDraft(value ?? ""), [value]);
-  const commit = () => {
-    const v = draft.trim();
-    if (v === (value ?? "")) return;
-    onCommit(v === "" && allowEmpty ? null : v);
-  };
+/** Like Field, but not a <label>: rows with several buttons must not forward clicks. */
+function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <input
-      className="input mono"
-      value={draft}
-      placeholder={allowEmpty ? "off" : ""}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-    />
+    <div className="field">
+      <span className="field__label">
+        {label}
+        {hint && <span className="muted small">{hint}</span>}
+      </span>
+      <span className="field__control">{children}</span>
+    </div>
   );
 }
 
@@ -102,18 +87,18 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
       <div className="card">
         <strong>Shortcuts</strong>
         <p className="muted small">
-          Examples: <kbd>Ctrl+Shift+Space</kbd>, <kbd>F9</kbd>, <kbd>RightCtrl</kbd> (hold). They work while
-          other apps are focused.
+          Click <em>Change</em> and press the keys you want, including the Windows key (for example
+          Ctrl + Win). Shortcuts work while other apps are focused.
         </p>
-        <Field label="Toggle (press to start, again to stop)">
-          <ShortcutInput value={s.toggleHotkey} allowEmpty={false} onCommit={(v) => v && save({ toggleHotkey: v })} />
-        </Field>
-        <Field label="Push-to-talk (hold to dictate)" hint="Leave empty to turn off">
-          <ShortcutInput value={s.pushToTalkHotkey} allowEmpty onCommit={(v) => save({ pushToTalkHotkey: v })} />
-        </Field>
-        <Field label="Cancel (only while dictating)" hint="Leave empty to turn off">
-          <ShortcutInput value={s.cancelHotkey} allowEmpty onCommit={(v) => save({ cancelHotkey: v })} />
-        </Field>
+        <Row label="Push-to-talk" hint="Hold to dictate, release to insert">
+          <ShortcutRecorder value={s.pushToTalkHotkey} allowClear onSave={(v) => save({ pushToTalkHotkey: v })} />
+        </Row>
+        <Row label="Hands-free toggle" hint="Press once to start, again to stop">
+          <ShortcutRecorder value={s.toggleHotkey} allowClear={false} onSave={(v) => v && save({ toggleHotkey: v })} />
+        </Row>
+        <Row label="Cancel" hint="Only while dictating; otherwise the key works as usual">
+          <ShortcutRecorder value={s.cancelHotkey} allowClear onSave={(v) => save({ cancelHotkey: v })} />
+        </Row>
       </div>
 
       <div className="card">
@@ -196,6 +181,17 @@ function SettingsForm({ initial }: { initial: SettingsT }) {
         <Field label="Offline mode" hint="Blocks all optional network access">
           <input type="checkbox" checked={s.offlineMode} disabled title="Always on in this version" />
         </Field>
+      </div>
+
+      <div className="card">
+        <strong>App</strong>
+        <Field
+          label="Keep running in the tray when closed"
+          hint="Shortcuts keep working with the window closed. Quit from the tray icon's menu."
+        >
+          <input type="checkbox" checked={s.closeToTray} onChange={(e) => save({ closeToTray: e.target.checked })} />
+        </Field>
+        <Planned label="Start Voxelle when I sign in" hint="Coming soon" />
       </div>
     </>
   );

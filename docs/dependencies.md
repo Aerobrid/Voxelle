@@ -22,7 +22,8 @@ Status legend: **planned** = intended, not yet added to a manifest · **added** 
 ## Rust crates
 | Crate | Version | Purpose (one line) | License | Status |
 |---|---|---|---|---|
-| tauri | 2.12 | Desktop shell, IPC, windows (main + overlay) | MIT OR Apache-2.0 | added |
+| tauri | 2.12 | Desktop shell, IPC, windows (main + overlay); features `tray-icon`, `image-png` for the tray (2026-10-15) | MIT OR Apache-2.0 | added |
+| tauri-plugin-single-instance | 2.5.4 | A second launch focuses the running app instead of starting a second keyboard hook/tray (2026-10-15) | Apache-2.0 OR MIT (verified `LICENSE.spdx`, both license files present) | added, verified 2026-10-15 |
 | serde / serde_json | 1 | IPC + settings serialization | MIT OR Apache-2.0 | added |
 | thiserror | 1 | Error types across modules | MIT OR Apache-2.0 | added |
 | chrono | 0.4 | History timestamps (RFC 3339); default features off | MIT OR Apache-2.0 | added |
