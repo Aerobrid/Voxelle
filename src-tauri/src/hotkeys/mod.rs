@@ -278,6 +278,121 @@ pub fn format_binding(b: &Binding) -> String {
     }
 }
 
+// ---------- what may be a shortcut ----------
+
+/// Which shortcut a binding is for. The rules differ: cancel only acts while dictating, so it may
+/// use keys (Escape, Delete) that would break other apps as an always-on shortcut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Role {
+    Toggle,
+    PushToTalk,
+    Cancel,
+}
+
+impl Role {
+    pub fn label(self) -> &'static str {
+        match self {
+            Role::Toggle => "Hands-free",
+            Role::PushToTalk => "Push to talk",
+            Role::Cancel => "Cancel",
+        }
+    }
+}
+
+#[derive(PartialEq)]
+enum KeyClass {
+    /// Keys most apps leave alone (F1–F24, Pause, ScrollLock, CapsLock): fine on their own.
+    Standalone,
+    /// Editing / navigation keys other apps rely on.
+    Navigation,
+    /// Keys that type text (letters, digits, punctuation, Space, numpad).
+    Typing,
+}
+
+fn key_class(code: u16) -> KeyClass {
+    match code {
+        c if (vk::F1..vk::F1 + 24).contains(&c) => KeyClass::Standalone,
+        vk::PAUSE | vk::SCROLL | vk::CAPITAL => KeyClass::Standalone,
+        vk::ESCAPE | vk::INSERT | vk::DELETE | vk::HOME | vk::END | vk::PRIOR | vk::NEXT | vk::LEFT
+        | vk::RIGHT | vk::UP | vk::DOWN | vk::SNAPSHOT | vk::APPS => KeyClass::Navigation,
+        _ => KeyClass::Typing,
+    }
+}
+
+/// Shortcuts Windows itself already uses (not exhaustive; the common ones people try).
+const WINDOWS_SHORTCUTS: &[&str] = &[
+    "Ctrl+Shift+Escape",
+    "Ctrl+Alt+Delete",
+    "Alt+F4",
+    "Ctrl+F4",
+    "Win+Shift+S",
+    "Win+Shift+M",
+    "Win+Shift+Left",
+    "Win+Shift+Right",
+    "Win+Shift+Up",
+    "Win+Shift+Down",
+    "Ctrl+Win+D",
+    "Ctrl+Win+Left",
+    "Ctrl+Win+Right",
+    "Ctrl+Win+F4",
+    "Ctrl+Win+O",
+    "Ctrl+Win+C",
+    "Ctrl+Win+N",
+    "Ctrl+Win+Shift+B",
+    "Win+Alt+R",
+    "Win+Alt+G",
+    "Win+Alt+B",
+    "Win+Alt+K",
+    "Win+Alt+D",
+    "Win+Alt+PrintScreen",
+];
+
+/// Our rules for a global shortcut: it must not take over typing, editing, or a key combination
+/// that Windows or nearly every app already uses. The message says how to pick a better one.
+pub fn check_allowed(b: &Binding, role: Role) -> Result<(), String> {
+    let text = format_binding(b);
+    if WINDOWS_SHORTCUTS.iter().any(|w| w.eq_ignore_ascii_case(&text)) {
+        return Err(format!("Windows already uses {}.", spaced(&text)));
+    }
+    match *b {
+        Binding::ModifierOnly { vk } if matches!(vk, vk::LWIN | vk::RWIN) => {
+            Err("The Windows key on its own opens Start. Pair it with another modifier, like Ctrl + Win.".into())
+        }
+        Binding::ModifierOnly { .. } => Ok(()),
+        Binding::ModifierChord { mods } if mods.count() == 2 && !mods.win => Err(if mods.ctrl && mods.alt {
+            "Ctrl + Alt is the AltGr key on many keyboard layouts, so it would fire while typing. Try Ctrl + Win.".into()
+        } else {
+            format!("Windows can use {} to switch keyboard layouts. Try Ctrl + Win.", spaced(&text))
+        }),
+        Binding::ModifierChord { .. } => Ok(()),
+        Binding::Combo { mods, vk } => {
+            let key = key_name(vk).unwrap_or_default();
+            let example = format!("Ctrl + Shift + {key}");
+            match key_class(vk) {
+                KeyClass::Standalone => Ok(()),
+                KeyClass::Navigation if role == Role::Cancel || mods.count() >= 2 => Ok(()),
+                KeyClass::Navigation => Err(format!(
+                    "{key} is used for editing and moving around in other apps. Add two modifiers, like {example}."
+                )),
+                KeyClass::Typing if mods.count() >= 2 => Ok(()),
+                KeyClass::Typing if mods.count() == 0 => Err(format!(
+                    "{key} on its own would stop typing in every app. Add two modifiers, like {example}."
+                )),
+                KeyClass::Typing => Err(format!(
+                    "{} is likely taken by other apps. Add a second modifier, like {example}.",
+                    spaced(&text)
+                )),
+            }
+        }
+    }
+}
+
+/// "Ctrl+Win" → "Ctrl + Win" for messages.
+fn spaced(s: &str) -> String {
+    s.split('+').collect::<Vec<_>>().join(" + ")
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Bindings {
     pub toggle: Option<Binding>,
@@ -295,21 +410,88 @@ pub fn canonicalize(s: &mut crate::storage::Settings) {
     }
 }
 
+/// Settings saved by an older version may hold shortcuts the current rules refuse (e.g. a plain
+/// letter, which swallows that key in every app). Reset each such shortcut to its default — or
+/// turn it off if the default is taken — so the others keep working. Returns what was changed.
+pub fn repair(s: &mut crate::storage::Settings) -> Vec<String> {
+    let defaults = crate::storage::Settings::default();
+    let ok = |v: &Option<String>, role| match v.as_deref().map(str::trim) {
+        None | Some("") => true,
+        Some(x) => parse_binding(x).is_ok_and(|b| check_allowed(&b, role).is_ok()),
+    };
+    let mut changed = Vec::new();
+    if !ok(&Some(s.toggle_hotkey.clone()), Role::Toggle) {
+        changed.push(format!("{}: {} → {}", Role::Toggle.label(), s.toggle_hotkey, defaults.toggle_hotkey));
+        s.toggle_hotkey = defaults.toggle_hotkey.clone();
+    }
+    let mut optional = [
+        (Role::PushToTalk, &mut s.push_to_talk_hotkey, defaults.push_to_talk_hotkey.clone(), false),
+        (Role::Cancel, &mut s.cancel_hotkey, defaults.cancel_hotkey.clone(), false),
+    ];
+    for (role, slot, default, reset) in optional.iter_mut() {
+        if !ok(slot, *role) {
+            changed.push(format!("{}: {} → {}", role.label(), slot.as_deref().unwrap_or(""), default.as_deref().unwrap_or("off")));
+            **slot = default.clone();
+            *reset = true;
+        }
+    }
+    // A default can collide with a shortcut the user kept: turn the reset ones off instead, and as
+    // a last resort every optional shortcut (the hands-free one always stays usable).
+    let (ptt_reset, cancel_reset) = (optional[0].3, optional[1].3);
+    let collides = |s: &crate::storage::Settings| Bindings::from_settings(s).is_err();
+    if collides(s) {
+        if ptt_reset {
+            s.push_to_talk_hotkey = None;
+        }
+        if cancel_reset {
+            s.cancel_hotkey = None;
+        }
+    }
+    if collides(s) {
+        let parsed = |v: &Option<String>| v.as_deref().and_then(|x| parse_binding(x).ok());
+        let toggle = parse_binding(&s.toggle_hotkey).ok();
+        if parsed(&s.push_to_talk_hotkey) == toggle {
+            s.push_to_talk_hotkey = None;
+        }
+        let cancel = parsed(&s.cancel_hotkey);
+        if cancel == toggle || cancel == parsed(&s.push_to_talk_hotkey) {
+            s.cancel_hotkey = None;
+        }
+    }
+    changed
+}
+
 impl Bindings {
     pub fn from_settings(s: &crate::storage::Settings) -> Result<Self, String> {
-        let parse = |label: &str, v: &Option<String>| -> Result<Option<Binding>, String> {
+        let parse = |role: Role, v: &Option<String>| -> Result<Option<Binding>, String> {
             match v.as_deref().map(str::trim) {
                 None | Some("") => Ok(None),
-                Some(x) => parse_binding(x).map(Some).map_err(|e| format!("{label} shortcut: {e}")),
+                Some(x) => {
+                    let b = parse_binding(x).map_err(|e| format!("{} shortcut: {e}", role.label()))?;
+                    check_allowed(&b, role)?;
+                    Ok(Some(b))
+                }
             }
         };
         let b = Self {
-            toggle: parse("Toggle", &Some(s.toggle_hotkey.clone()))?,
-            push_to_talk: parse("Push-to-talk", &s.push_to_talk_hotkey)?,
-            cancel: parse("Cancel", &s.cancel_hotkey)?,
+            toggle: parse(Role::Toggle, &Some(s.toggle_hotkey.clone()))?,
+            push_to_talk: parse(Role::PushToTalk, &s.push_to_talk_hotkey)?,
+            cancel: parse(Role::Cancel, &s.cancel_hotkey)?,
         };
-        if b.toggle.is_some() && b.toggle == b.push_to_talk {
-            return Err("Toggle and push-to-talk cannot use the same shortcut".into());
+        let roles = [(Role::Toggle, b.toggle), (Role::PushToTalk, b.push_to_talk), (Role::Cancel, b.cancel)];
+        for (i, (ra, a)) in roles.iter().enumerate() {
+            for (rb, other) in &roles[i + 1..] {
+                if let (Some(x), Some(y)) = (a, other) {
+                    if x == y {
+                        return Err(format!(
+                            "{} can't be both the {} and the {} shortcut. Each needs its own keys.",
+                            spaced(&format_binding(x)),
+                            ra.label().to_lowercase(),
+                            rb.label().to_lowercase()
+                        ));
+                    }
+                }
+            }
         }
         Ok(b)
     }
@@ -556,33 +738,56 @@ pub fn start(app: &AppHandle, bindings: Bindings) -> Result<SharedBindings, Stri
 }
 
 pub const CAPTURE_EVENT: &str = "shortcut_capture";
-/// The recorder swallows every key, so it must never stay on if the UI goes away.
-const CAPTURE_TIMEOUT: Duration = Duration::from_secs(15);
+/// The recorder swallows every key, so it must never stay on if the UI goes away: it stops quietly
+/// after this long without a key event (never while a key is held).
+const CAPTURE_IDLE_LIMIT: Duration = Duration::from_secs(15);
 static CAPTURE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Start recording a shortcut: the next keys pressed (until all are released) are reported to the
-/// UI as `CAPTURE_EVENT` updates and do nothing else. Ends by itself after `CAPTURE_TIMEOUT`.
-pub fn begin_capture(app: &AppHandle) -> Result<(), String> {
+/// Start recording a shortcut for `role`: the next keys pressed (until all are released) are
+/// reported to the UI as `CAPTURE_EVENT` updates and do nothing else.
+pub fn begin_capture(app: &AppHandle, role: Role) -> Result<(), String> {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
     let generation = CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    #[cfg(windows)]
-    {
-        let sink_app = app.clone();
-        windows::begin_capture(Box::new(move |u| {
-            let _ = sink_app.emit(CAPTURE_EVENT, u);
-        }))?;
-    }
-    #[cfg(not(windows))]
-    return Err("Recording shortcuts is not implemented on this platform yet.".into());
-    let app = app.clone();
+    // The hook procedure must return within Windows' hook timeout, so it only queues updates;
+    // this thread delivers them. It ends when the recorder (and with it the sender) is dropped.
+    let (tx, rx) = mpsc::channel::<capture::CaptureUpdate>();
+    let emit_app = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(CAPTURE_TIMEOUT);
-        if CAPTURE_GENERATION.load(Ordering::SeqCst) == generation && end_capture() {
-            let _ = app.emit(
-                CAPTURE_EVENT,
-                capture::CaptureUpdate::Rejected { reason: "No keys were pressed in time.".into() },
-            );
+        for u in rx {
+            let _ = emit_app.emit(CAPTURE_EVENT, u);
+        }
+    });
+    #[cfg(windows)]
+    windows::begin_capture(role, Box::new(move |u| {
+        let _ = tx.send(u);
+    }))?;
+    #[cfg(not(windows))]
+    {
+        let _ = (tx, role);
+        return Err("Recording shortcuts is not implemented on this platform yet.".into());
+    }
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(250));
+        if CAPTURE_GENERATION.load(Ordering::SeqCst) != generation {
+            return; // a newer recording owns the timeout
+        }
+        #[cfg(windows)]
+        match windows::capture_idle() {
+            None => return,
+            Some(idle) if idle >= CAPTURE_IDLE_LIMIT => {
+                if end_capture() {
+                    let _ = app.emit(CAPTURE_EVENT, capture::CaptureUpdate::Ended);
+                }
+                return;
+            }
+            Some(_) => {}
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = &app;
+            return;
         }
     });
     #[allow(unreachable_code)]
@@ -866,5 +1071,82 @@ mod tests {
         assert_eq!(s.toggle_hotkey, "Ctrl+Space");
         assert_eq!(s.push_to_talk_hotkey.as_deref(), Some("Ctrl+Z"));
         assert_eq!(s.cancel_hotkey.as_deref(), Some("not a key"), "invalid text is left for validation");
+    }
+
+    fn allowed(s: &str, role: Role) -> bool {
+        check_allowed(&parse_binding(s).unwrap(), role).is_ok()
+    }
+
+    #[test]
+    fn shortcuts_that_take_over_typing_are_not_allowed() {
+        for s in ["A", "7", "Space", "Left", "Escape", "Delete", "Alt+D", "Ctrl+C", "Shift+A", "Win+H", "LeftWin", "RightWin"] {
+            assert!(!allowed(s, Role::Toggle), "{s} should be refused");
+            assert!(!allowed(s, Role::PushToTalk), "{s} should be refused");
+        }
+        for s in ["Ctrl+Shift+Space", "Ctrl+Win", "RightCtrl", "LeftAlt", "F9", "Pause", "Ctrl+Alt+D", "Ctrl+Win+Space", "Win+F2"] {
+            assert!(allowed(s, Role::Toggle), "{s} should be allowed");
+        }
+    }
+
+    #[test]
+    fn cancel_may_use_editing_keys_alone() {
+        assert!(allowed("Escape", Role::Cancel));
+        assert!(allowed("Delete", Role::Cancel));
+        assert!(!allowed("Q", Role::Cancel));
+    }
+
+    #[test]
+    fn layout_switch_altgr_and_windows_shortcuts_are_refused() {
+        for s in ["Ctrl+Alt", "Alt+Shift", "Ctrl+Shift", "Win+Shift+S", "Ctrl+Win+D", "Alt+F4", "Ctrl+Shift+Escape"] {
+            let err = check_allowed(&parse_binding(s).unwrap(), Role::Toggle).unwrap_err();
+            assert!(!err.is_empty(), "{s}");
+        }
+    }
+
+    #[test]
+    fn windows_shortcut_list_is_canonical() {
+        for w in WINDOWS_SHORTCUTS {
+            assert_eq!(&format_binding(&parse_binding(w).unwrap()), w);
+        }
+    }
+
+    #[test]
+    fn the_defaults_are_allowed() {
+        assert!(Bindings::from_settings(&crate::storage::Settings::default()).is_ok());
+    }
+
+    #[test]
+    fn any_two_roles_sharing_keys_are_rejected() {
+        let mut s = crate::storage::Settings::default();
+        s.cancel_hotkey = Some(s.toggle_hotkey.clone());
+        let err = Bindings::from_settings(&s).unwrap_err();
+        assert!(err.contains("hands-free") && err.contains("cancel"), "{err}");
+    }
+
+    #[test]
+    fn repair_resets_refused_shortcuts_and_keeps_the_rest() {
+        let mut s = crate::storage::Settings::default();
+        s.toggle_hotkey = "Left".into();
+        s.push_to_talk_hotkey = Some("Ctrl+Win".into());
+        s.cancel_hotkey = Some("A".into());
+        let changed = repair(&mut s);
+        assert_eq!(changed.len(), 2);
+        assert_eq!(s.toggle_hotkey, "Ctrl+Shift+Space");
+        assert_eq!(s.push_to_talk_hotkey.as_deref(), Some("Ctrl+Win"));
+        assert_eq!(s.cancel_hotkey.as_deref(), Some("Escape"));
+        assert!(Bindings::from_settings(&s).is_ok());
+    }
+
+    #[test]
+    fn repair_turns_off_a_reset_shortcut_that_would_collide() {
+        let mut s = crate::storage::Settings::default();
+        s.toggle_hotkey = "Escape".into(); // refused for hands-free; user-kept below
+        s.push_to_talk_hotkey = Some("Ctrl+Shift+Space".into()); // the hands-free default
+        let changed = repair(&mut s);
+        assert_eq!(changed.len(), 1);
+        assert!(Bindings::from_settings(&s).is_ok());
+        assert_eq!(s.toggle_hotkey, "Ctrl+Shift+Space");
+        assert_eq!(s.push_to_talk_hotkey, None, "only the colliding shortcut is turned off");
+        assert_eq!(s.cancel_hotkey.as_deref(), Some("Escape"));
     }
 }

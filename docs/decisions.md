@@ -209,3 +209,65 @@ Append-only record of non-obvious choices. Format: date — decision — why —
   dictation / Quit. A second launch shows the running instance (tauri-plugin-single-instance)
   instead of installing a second keyboard hook. Tray icon = the app icon for now; a dedicated small
   monochrome tray glyph is a pending branding item (see ui-direction).
+
+## 2026-10-17 — Which keys may be a global shortcut (our rules)
+- Root cause of the user's "keyboard got messed up": the recorder accepted any key. Their saved
+  settings held push-to-talk = **LeftWin** (every Win press started a dictation and Start was
+  masked) and hands-free = Ctrl+Space. A plain key (letters, arrows) would have been swallowed in
+  every app.
+- **Decision:** one rule set, `hotkeys::check_allowed(binding, role)`, applied by the recorder and
+  by every settings save (and at startup):
+  - typing keys (letters, digits, punctuation, Space, numpad) need **two** modifiers;
+  - editing/navigation keys (arrows, Home/End, PgUp/PgDn, Insert, Delete, Escape, PrintScreen,
+    Menu) need two modifiers — except for **Cancel**, which only acts while dictating;
+  - F1–F24, Pause, ScrollLock, CapsLock are fine alone; single side-specific Ctrl/Alt/Shift are fine;
+  - the Win key alone is refused (it opens Start); Ctrl+Alt (AltGr), Alt+Shift and Ctrl+Shift
+    (layout switching) chords are refused; a short list of Windows' own shortcuts is refused;
+  - no two roles may share keys.
+- Saved shortcuts that break these rules are reset to their default at startup (or turned off if
+  the default collides) and the change is logged; the others keep working. Previously one bad
+  value disabled every shortcut silently.
+- Refusals are shown in a dialog with the reason; accepted shortcuts are confirmed with a toast.
+  Wording is our own.
+
+## 2026-10-17 — Recorder: never strand a key, quiet timeout, emit off the hook thread
+- The recorder only swallows key-ups of keys whose key-down it took (a key held before recording
+  started is released normally), and key-ups still owed when recording ends are swallowed by a
+  drain list, so neither Windows nor the shortcut matcher sees half a key press.
+- The timeout counts from the last key event (never while a key is held) and ends quietly
+  (`ended` → "Stopped listening"), not with an error. Esc alone backs out (except for Cancel,
+  where Esc is a valid choice).
+- Updates are queued from the hook procedure and emitted on another thread: Windows silently
+  removes a low-level hook that is slow to return, which would kill every shortcut.
+
+## 2026-10-17 — Bundle Inter + JetBrains Mono; custom dropdown
+- User asked for a nicer, readable font. v2 used the platform font; this replaces it with Inter
+  (UI) and JetBrains Mono (keys, numbers, paths), both SIL OFL 1.1, bundled via npm/Vite (no
+  network). Same look on Windows/macOS/Linux.
+- Native `<select>` popups are OS-drawn square lists that can't match the rounded surfaces, so
+  Settings uses our own `Select` (ARIA listbox, keyboard: arrows/Home/End/Enter/Esc/type-ahead).
+
+## 2026-10-17 — Users can use their own whisper.cpp model files
+- Any `.bin` file in the model folder that has the GGML magic and isn't a catalog file is listed as
+  "Your file · no published checksum" and can be selected. It has no pinned SHA-256 (none exists),
+  so it is re-checked for format and for being a plain file inside the model folder before every
+  load. Ids are `file:<name>`; names with path separators, drive prefixes or `..` are refused.
+- This is the "manual import" route in principles.md (explicit user action, nothing downloaded).
+  Catalog files keep the full pinned-hash check.
+
+## 2026-10-17 — CPU speed, CUDA, flash attention (measured)
+- Release bench, Whisper Small on CPU: 6 threads RTF 1.27, 8 threads 1.08, 11 threads 1.05 → keep
+  the current default (8). whisper.cpp is built with /arch:AVX512 (GGML_NATIVE), so the CPU path
+  is already optimized; Large v3 Turbo is simply ~5× real time on this CPU. The app now explains
+  this on Models and points to Small/Base or the GPU switch.
+- Flash attention (whisper.cpp `flash_attn`): **on for GPU loads only**. Vulkan p50, 12-clip
+  corpus: Base 144 → 105 ms, Small 299 → 240 ms, Large v3 Turbo 947 → 724 ms (939 → 729 in the
+  A/B run), WER unchanged (2.0%). On the CPU it is slower (Small 5090 → 6544 ms, Turbo 23.3 →
+  32.1 s), so CPU loads keep it off.
+- CUDA (`gpu-cuda`) cannot be built here: CUDA 12.4 rejects VS 2026 (MSVC 14.51), and with
+  `-allow-unsupported-compiler` its front end crashes (`cudafe++` 0xC0000409). It needs a newer
+  CUDA 12.x or VS 2022 build tools; CUDA 13 dropped Pascal (GTX 1080). Vulkan already gives
+  0.20 RTF for Large v3 Turbo on this GPU. `win-env.cmd` now finds `CUDA_PATH` for when it's possible.
+- Shipping risk found: GGML_NATIVE builds for the build machine's CPU (AVX-512 here); a release
+  build must use portable CPU variants or it will crash on CPUs without AVX-512. Tracked for the
+  release/CPU-build P0 item.

@@ -78,10 +78,14 @@ export interface ModelInfo {
   /** Measured speed on this machine (real-time factor), null until benchmarked. */
   measuredRtf: number | null;
   measuredBackend: string | null;
+  /** A file the user put in the model folder: no pinned checksum, format-checked only. */
+  userAdded: boolean;
 }
 
 export interface AsrCapabilities {
   gpuCompiled: boolean;
+  /** GPU API in this build ("Vulkan" / "CUDA"), null for CPU-only builds. */
+  gpuBackend: string | null;
   gpuActive: boolean;
   streaming: boolean;
   multilingual: boolean;
@@ -130,8 +134,15 @@ export interface StorageInfo {
   modelDir: string;
 }
 
+/** Which shortcut is being recorded (src-tauri/src/hotkeys/mod.rs `Role`). */
+export type ShortcutRole = "toggle" | "pushToTalk" | "cancel";
+
 /** Shortcut recorder updates (src-tauri/src/hotkeys/capture.rs `CaptureUpdate`). */
 export type ShortcutCaptureUpdate =
   | { kind: "progress"; keys: string }
   | { kind: "done"; shortcut: string }
-  | { kind: "rejected"; reason: string };
+  | { kind: "rejected"; reason: string }
+  /** No key for a while: listening stopped quietly; nothing changed. */
+  | { kind: "ended" }
+  /** Esc on its own: the user backed out. */
+  | { kind: "dismissed" };

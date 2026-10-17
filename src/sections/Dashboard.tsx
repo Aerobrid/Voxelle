@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { core } from "../ipc/bridge";
 import { canCancel, canStart, canStop } from "../ipc/transitions";
 import type { DictationResult } from "../ipc/types";
-import { useAppStore } from "../state/store";
+import { toast, useAppStore } from "../state/store";
 import { errorText, useCore } from "../state/useCore";
-import { todayStats } from "../state/derive";
+import { todayStats, wordsPerMinute } from "../state/derive";
 import { VoiceOrb } from "../components/VoiceOrb";
 import { KeyChips } from "../components/ShortcutRecorder";
 import { IconCopy } from "../components/Icons";
@@ -15,35 +15,23 @@ const OUTCOME_TEXT: Record<string, string> = {
   failed: "Not inserted",
 };
 
-/** First-audio delay worth telling the user about (speech before it is lost). */
-const SLOW_MIC_MS = 400;
-
-function fmtMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
-}
-
-function LastResult({ result }: { result: DictationResult }) {
+function LastResult({ result, onStats }: { result: DictationResult; onStats: () => void }) {
   const [text, setText] = useState(result.transcript);
-  const [note, setNote] = useState<string | null>(null);
-  useEffect(() => {
-    setText(result.transcript);
-    setNote(null);
-  }, [result]);
+  useEffect(() => setText(result.transcript), [result]);
 
   const edited = text !== result.transcript;
   const copy = () =>
     core.copyText(text).then(
-      () => setNote("Copied to the clipboard."),
-      (e) => setNote(errorText(e)),
+      () => toast("Copied to the clipboard."),
+      (e) => toast(errorText(e), "error"),
     );
   const saveEdit = () => {
     if (!result.historyId) return;
     core.setHistoryEdit(result.historyId, text).then(
-      () => setNote("Correction saved. The original transcript is kept too."),
-      (e) => setNote(errorText(e)),
+      () => toast("Correction saved. The original is kept too."),
+      (e) => toast(errorText(e), "error"),
     );
   };
-  const m = result.metrics;
 
   return (
     <section className="section">
@@ -77,28 +65,11 @@ function LastResult({ result }: { result: DictationResult }) {
               Revert
             </button>
           )}
-          {note && <span className="muted small">{note}</span>}
+          <span className="actions__spacer" />
+          <button className="link small" onClick={onStats}>
+            Timings
+          </button>
         </div>
-        {!m.micWasReady && m.firstAudioMs != null && m.firstAudioMs >= SLOW_MIC_MS && (
-          <p className="notice notice--warn small" style={{ margin: "14px 0 0" }}>
-            Your microphone took {fmtMs(m.firstAudioMs)} to start, so your first words may be missing.
-            This is common with Bluetooth headsets. Turn on <em>Keep microphone ready</em> in Settings
-            to start instantly.
-          </p>
-        )}
-        <details className="details">
-          <summary>Details</summary>
-          <dl className="metrics">
-            <div><dt>Audio</dt><dd>{fmtMs(m.audioMs)}</dd></div>
-            <div><dt>Stop → text</dt><dd>{fmtMs(m.stopToTranscriptMs)}</dd></div>
-            <div><dt>Transcription</dt><dd>{fmtMs(m.transcribeMs)} on {m.gpu ? "GPU" : "CPU"}</dd></div>
-            <div><dt>Speed</dt><dd>{m.realTimeFactor.toFixed(2)}× real time</dd></div>
-            <div><dt>Mic start</dt><dd>{m.micWasReady ? "instant (kept ready)" : fmtMs(m.startLatencyMs)}</dd></div>
-            {m.firstAudioMs != null && <div><dt>First audio after</dt><dd>{fmtMs(m.firstAudioMs)}</dd></div>}
-            {m.modelLoadMs > 50 && <div><dt>Model load</dt><dd>{fmtMs(m.modelLoadMs)}</dd></div>}
-            <div><dt>Inserted via</dt><dd>{result.insert.method}</dd></div>
-          </dl>
-        </details>
       </div>
     </section>
   );
@@ -140,6 +111,7 @@ export function Dashboard() {
   const s = snapshot.state;
   const stats = historyQ.status === "ok" ? todayStats(historyQ.data) : null;
   const settings = settingsQ.status === "ok" ? settingsQ.data : null;
+  const pace = stats ? wordsPerMinute(stats.words, stats.audioMs) : null;
 
   const orbClick = () => {
     if (canStop(s)) run(core.stopDictation());
@@ -208,12 +180,12 @@ export function Dashboard() {
           <div className="stat__label">Dictations today</div>
         </div>
         <div className="stat">
-          <div className="stat__value">{lastResult ? fmtMs(lastResult.metrics.stopToTranscriptMs) : "—"}</div>
-          <div className="stat__label">Last stop → text</div>
+          <div className="stat__value">{pace ?? "—"}</div>
+          <div className="stat__label">Words per minute today</div>
         </div>
       </div>
 
-      {lastResult && <LastResult result={lastResult} />}
+      {lastResult && <LastResult result={lastResult} onStats={() => setSection("stats")} />}
 
       {historyQ.status === "ok" && historyQ.data.length > 0 && !lastResult && (
         <section className="section">

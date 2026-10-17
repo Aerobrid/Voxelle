@@ -87,6 +87,63 @@ pub fn catalog_entry(id: &str) -> Option<&'static CatalogEntry> {
     CATALOG.iter().find(|e| e.id == id)
 }
 
+/// Ids of models the user added themselves: this prefix + the file name in the model folder.
+pub const USER_MODEL_PREFIX: &str = "file:";
+
+/// A whisper.cpp model file the user put in the model folder. There is no pinned checksum for it,
+/// so it is only format-checked (GGML magic) and is used only when the user selects it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserModel {
+    pub id: String,
+    pub file_name: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+}
+
+/// Plain file name of a user model id, or None if the id could point outside the model folder.
+fn user_file_name(id: &str) -> Option<&str> {
+    let name = id.strip_prefix(USER_MODEL_PREFIX)?;
+    let plain = !name.is_empty()
+        && !name.contains(['/', '\\', ':'])
+        && name != ".."
+        && name.to_ascii_lowercase().ends_with(".bin");
+    plain.then_some(name)
+}
+
+/// Resolve a user model id to its file, re-checking that it is still a GGML file in the folder.
+pub fn user_model(dir: &Path, id: &str) -> Option<UserModel> {
+    let file_name = user_file_name(id)?;
+    if CATALOG.iter().any(|e| e.file_name.eq_ignore_ascii_case(file_name)) {
+        return None; // catalog files are always handled (and hash-checked) as catalog models
+    }
+    let path = dir.join(file_name);
+    let meta = std::fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() || meta.len() < 1_000_000 || !has_ggml_magic(&path).unwrap_or(false) {
+        return None;
+    }
+    Some(UserModel { id: id.to_string(), file_name: file_name.to_string(), path, size_bytes: meta.len() })
+}
+
+/// Whisper.cpp model files in the folder that are not catalog files, sorted by name.
+pub fn user_models(dir: &Path) -> Vec<UserModel> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut found: Vec<UserModel> = entries
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().map(|n| format!("{USER_MODEL_PREFIX}{n}")))
+        .filter_map(|id| user_model(dir, &id))
+        .collect();
+    found.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    found
+}
+
+/// The file a model id refers to, whether a catalog model or one the user added.
+pub fn resolve_path(dir: &Path, id: &str) -> Option<PathBuf> {
+    match catalog_entry(id) {
+        Some(e) => Some(model_path(dir, e)),
+        None => user_model(dir, id).map(|u| u.path),
+    }
+}
+
 /// What the UI shows for each model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,6 +165,8 @@ pub struct ModelInfo {
     /// Real-time factor measured on this machine (processing time / audio time). None until run.
     pub measured_rtf: Option<f32>,
     pub measured_backend: Option<String>,
+    /// Added by the user (no pinned checksum); false for catalog models.
+    pub user_added: bool,
 }
 
 /// Per-model facts learned at runtime (verification + benchmark), kept by the app.
@@ -157,8 +216,31 @@ pub fn describe(
                 integrity_verified: installed && f.integrity_verified,
                 measured_rtf: f.measured_rtf,
                 measured_backend: f.measured_backend,
+                user_added: false,
             }
         })
+        .chain(user_models(dir).into_iter().map(|u| {
+            let f = facts(&u.id);
+            ModelInfo {
+                name: u.file_name.trim_end_matches(".bin").to_string(),
+                purpose: "speech".into(),
+                locality: "local".into(),
+                size_bytes: u.size_bytes,
+                memory_mb: 0,
+                languages: Vec::new(),
+                license: "Unknown (your file)".into(),
+                source: "Added to the model folder by you".into(),
+                sha256: String::new(),
+                installed: true,
+                path: Some(u.path.display().to_string()),
+                selected: selected_id == Some(u.id.as_str()),
+                integrity_verified: false,
+                measured_rtf: f.measured_rtf,
+                measured_backend: f.measured_backend,
+                user_added: true,
+                id: u.id,
+            }
+        }))
         .collect()
 }
 
@@ -337,5 +419,37 @@ mod tests {
         assert!(infos[0].selected);
         assert!(infos[0].path.is_none());
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn fake_ggml(path: &Path) {
+        let mut bytes = 0x6767_6d6c_u32.to_le_bytes().to_vec();
+        bytes.resize(1_100_000, 0);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn user_model_ids_cannot_leave_the_model_folder() {
+        for bad in ["file:../x.bin", r"file:..\x.bin", "file:C:x.bin", "file:", "file:..", "file:model.gguf", "whisper-base-q5_1"] {
+            assert_eq!(user_file_name(bad), None, "{bad}");
+        }
+        assert_eq!(user_file_name("file:my-model.bin"), Some("my-model.bin"));
+    }
+
+    #[test]
+    fn lists_only_ggml_files_that_are_not_catalog_models() {
+        let d = tmp("user-models");
+        fake_ggml(&d.join("my-finetune.bin"));
+        fake_ggml(&d.join(CATALOG[0].file_name)); // catalog file: stays a catalog model
+        std::fs::write(d.join("notes.bin"), vec![0u8; 1_100_000]).unwrap(); // not GGML
+        let found = user_models(&d);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "file:my-finetune.bin");
+        assert_eq!(resolve_path(&d, "file:my-finetune.bin"), Some(d.join("my-finetune.bin")));
+        assert_eq!(resolve_path(&d, "file:notes.bin"), None);
+
+        let listed = describe(&d, Some("file:my-finetune.bin"), &|_| ModelRuntimeFacts::default());
+        let mine = listed.iter().find(|m| m.user_added).unwrap();
+        assert!(mine.selected && mine.installed && !mine.integrity_verified);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

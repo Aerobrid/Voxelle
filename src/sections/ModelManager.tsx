@@ -4,6 +4,8 @@ import type { ModelInfo } from "../ipc/types";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
 import { PrivacyChip } from "../components/PrivacyChip";
+import { toast } from "../state/store";
+import { cpuAdvice, speedText } from "../state/derive";
 
 function fmtSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -20,7 +22,8 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
     p().then(
       (v) => {
         setBusy(null);
-        setNote(done(v));
+        const msg = done(v);
+        if (msg) toast(msg);
         onChange();
       },
       (e) => {
@@ -36,7 +39,9 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
         <h2 style={{ margin: 0 }}>{m.name}</h2>
         <div className="model__status">
           {m.selected && <span className="tag tag--accent">In use</span>}
-          {m.installed ? (
+          {m.userAdded ? (
+            <span className="tag tag--warn">Your file · no published checksum</span>
+          ) : m.installed ? (
             <span className={m.integrityVerified ? "tag tag--ok" : "tag"}>
               {m.integrityVerified ? "Installed · verified" : "Installed · not verified yet"}
             </span>
@@ -46,15 +51,17 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
         </div>
       </div>
       <div className="model__meta">
-        <span>{fmtSize(m.sizeBytes)} download</span>
-        <span>~{m.memoryMb} MB while loaded</span>
-        <span>{m.languages.length > 3 ? `${m.languages.length} languages` : m.languages.join(", ")}</span>
+        <span>{fmtSize(m.sizeBytes)}{m.userAdded ? "" : " download"}</span>
+        {m.memoryMb > 0 && <span>~{m.memoryMb} MB while loaded</span>}
+        {m.languages.length > 0 && (
+          <span>{m.languages.length > 3 ? `${m.languages.length} languages` : m.languages.join(", ")}</span>
+        )}
         <span>{m.license}</span>
         <PrivacyChip locality={m.locality} />
       </div>
       <p className="small muted" style={{ margin: "0 0 12px" }}>
         {m.measuredRtf != null
-          ? `Measured on this computer: ${m.measuredRtf.toFixed(2)}× real time (${m.measuredBackend ?? "?"}).`
+          ? `Last measured here: ${speedText(m.measuredRtf)} (${m.measuredBackend ?? "?"}).`
           : "Speed on this computer: not measured yet — dictate once with it."}
       </p>
       <div className="actions">
@@ -63,10 +70,11 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
             <button
               className={m.selected ? "btn" : "btn btn--primary"}
               disabled={m.selected || busy != null}
-              onClick={() => act("select", () => core.selectModel(m.id), () => null)}
+              onClick={() => act("select", () => core.selectModel(m.id), () => `Now using ${m.name}.`)}
             >
               {m.selected ? "In use" : "Use this model"}
             </button>
+            {!m.userAdded && (
             <button
               className="btn btn--ghost"
               disabled={busy != null}
@@ -78,6 +86,7 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
             >
               {busy === "verify" ? "Verifying…" : "Verify checksum"}
             </button>
+            )}
           </>
         ) : (
           <span className="small muted">
@@ -88,10 +97,15 @@ function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
         )}
         {note && <span className="muted small">{note}</span>}
       </div>
+      {m.userAdded && (
+        <p className="small faint" style={{ margin: "10px 0 0" }}>
+          Checked only for the whisper.cpp format. Use model files from sources you trust.
+        </p>
+      )}
       <details className="details">
         <summary>File details</summary>
         <p className="path" style={{ margin: "8px 0 0" }}>Source: {m.source}</p>
-        <p className="path" style={{ margin: "4px 0 0" }}>SHA-256: {m.sha256}</p>
+        {m.sha256 && <p className="path" style={{ margin: "4px 0 0" }}>SHA-256: {m.sha256}</p>}
         {m.path && <p className="path" style={{ margin: "4px 0 0" }}>Path: {m.path}</p>}
       </details>
     </div>
@@ -102,11 +116,25 @@ export function ModelManager() {
   const [q, reload] = useCore(() => core.listModels(), []);
   const [caps] = useCore(() => core.asrCapabilities(), []);
   const [dir] = useCore(() => core.getModelDir(), []);
+  const [settings] = useCore(() => core.getSettings(), []);
+  const selected = q.status === "ok" ? q.data.find((m) => m.selected) : undefined;
+  const advice =
+    selected && caps.status === "ok" && settings.status === "ok"
+      ? cpuAdvice({
+          modelName: selected.name,
+          memoryMb: selected.memoryMb,
+          measuredCpuRtf: selected.measuredBackend === "CPU" ? selected.measuredRtf : null,
+          gpuActive: caps.data.gpuActive,
+          gpuCompiled: caps.data.gpuCompiled,
+          preferGpu: settings.data.preferGpu,
+        })
+      : null;
+  const openFolder = () => core.openModelFolder().catch((e) => toast(errorText(e), "error"));
   return (
     <div className="page">
       <div className="page__head">
         <h1>Models</h1>
-        <p className="sub">Speech models run on this computer. Each file is checked against a pinned checksum before it loads.</p>
+        <p className="sub">Speech models run on this computer. Catalog models are checked against a pinned checksum before they load; files you add are checked for the whisper.cpp format.</p>
       </div>
       <div className="tiles" style={{ marginBottom: 18 }}>
         <div className="tile">
@@ -114,7 +142,7 @@ export function ModelManager() {
           <div className="tile__value">
             {caps.status === "ok"
               ? caps.data.gpuCompiled
-                ? `GPU (Vulkan) · ${caps.data.gpuActive ? "in use" : "not in use"}`
+                ? `GPU (${caps.data.gpuBackend ?? "?"}) · ${caps.data.gpuActive ? "in use" : "not in use"}`
                 : "CPU only in this build"
               : "—"}
           </div>
@@ -122,8 +150,17 @@ export function ModelManager() {
         <div className="tile">
           <div className="tile__label">Model folder</div>
           <div className="path">{dir.status === "ok" ? dir.data : "—"}</div>
+          <div className="actions" style={{ marginTop: 8 }}>
+            <button className="btn btn--sm" onClick={openFolder}>
+              Open folder
+            </button>
+            <button className="btn btn--ghost btn--sm" onClick={reload}>
+              Rescan
+            </button>
+          </div>
         </div>
       </div>
+      {advice && <div className="notice notice--warn">{advice}</div>}
       <Gate q={q}>
         {(models) => (
           <div>
@@ -133,6 +170,16 @@ export function ModelManager() {
               .map((m) => (
                 <ModelCard key={m.id} m={m} onChange={reload} />
               ))}
+            <section className="section">
+              <div className="section__head">
+                <h2>Use your own model</h2>
+              </div>
+              <p className="small muted" style={{ margin: 0, maxWidth: "62ch" }}>
+                Put any whisper.cpp model file (<span className="mono">.bin</span>, GGML format), such as a
+                fine-tune or another size, in the model folder, then press Rescan. It appears above, marked as
+                your file, and is used only when you choose it.
+              </p>
+            </section>
           </div>
         )}
       </Gate>

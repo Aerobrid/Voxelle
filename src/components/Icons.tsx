@@ -91,3 +91,36 @@ export const GlyphClose = () => (
     <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" stroke="currentColor" strokeWidth="1" />
   </svg>
 );
+
+/** Stats = rising bars on a baseline. */
+export const IconStats = () => (
+  <Icon>
+    <path d="M4 20h16" />
+    <path d="M7 16v-4M12 16V7M17 16v-7" />
+  </Icon>
+);
+
+export const IconCheck = () => (
+  <Icon>
+    <path d="M5 12.5l4.5 4.5L19 7.5" />
+  </Icon>
+);
+
+export const IconAlert = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5v5.5M12 16.5v.01" />
+  </Icon>
+);
+
+export const IconPencil = () => (
+  <Icon>
+    <path d="M14.5 5.5l4 4L9 19H5v-4l9.5-9.5z" />
+  </Icon>
+);
+
+export const IconClose = () => (
+  <Icon>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);

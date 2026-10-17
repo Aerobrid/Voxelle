@@ -229,11 +229,15 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
     if transcribed.is_ok() {
         if let Some(id) = model_id.as_deref() {
             // "Measured speed on this machine" for the model manager comes from real dictations.
-            let backend = if metrics.gpu { "GPU (Vulkan)" } else { "CPU" };
+            let backend = match crate::asr::GPU_BACKEND {
+                Some(api) if metrics.gpu => format!("GPU ({api})"),
+                _ if metrics.gpu => "GPU".to_string(),
+                _ => "CPU".to_string(),
+            };
             let rtf = metrics.real_time_factor;
             st.update_facts(id, |f| {
                 f.measured_rtf = Some(rtf);
-                f.measured_backend = Some(backend.into());
+                f.measured_backend = Some(backend);
             });
         }
     }
@@ -354,6 +358,18 @@ pub fn ensure_model_loaded(
     use_gpu: bool,
 ) -> Result<(), String> {
     let id = model_id.ok_or_else(|| AsrError::NoModel.to_string())?;
+    let opts = LoadOptions {
+        use_gpu,
+        threads: crate::asr::default_threads(),
+    };
+    if id.starts_with(models::USER_MODEL_PREFIX) {
+        // The user's own file: no pinned checksum exists, so it is re-checked for the whisper.cpp
+        // format (and that it is still a plain file inside the model folder) before every load.
+        let user = models::user_model(&st.model_dir(), id).ok_or_else(|| {
+            format!("Your model file for '{id}' is missing or is not a whisper.cpp model. Choose another in Models.")
+        })?;
+        return asr.load(&user.path, &opts).map_err(|e| e.to_string());
+    }
     let entry = catalog_entry(id).ok_or_else(|| format!("Unknown model '{id}'."))?;
     let path = models::model_path(&st.model_dir(), entry);
     if !models::is_installed(&st.model_dir(), entry) {
@@ -379,10 +395,6 @@ pub fn ensure_model_loaded(
             }
         }
     }
-    let opts = LoadOptions {
-        use_gpu,
-        threads: crate::asr::default_threads(),
-    };
     asr.load(&path, &opts).map_err(|e| e.to_string())
 }
 

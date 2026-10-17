@@ -57,8 +57,8 @@ which ships with GPU drivers; we do not redistribute it. Shaders are compiled at
 ## Fonts
 | Font | Use | License | Status |
 |---|---|---|---|
-| Inter | UI text | SIL OFL 1.1 | planned — bundle locally (offline; no CDN) |
-| JetBrains Mono | Transcripts/technical | SIL OFL 1.1 | planned — bundle locally |
+| Inter (npm `@fontsource-variable/inter` 5.3.0) | UI text: one readable look on every OS (user asked for a nicer font, 2026-10-17) | SIL OFL 1.1 (verified package `LICENSE`; package manifest `OFL-1.1`) | added, verified 2026-10-17 — bundled by Vite into the app, nothing fetched at runtime |
+| JetBrains Mono (npm `@fontsource-variable/jetbrains-mono` 5.3.0) | Shortcut keys, numbers, file paths | SIL OFL 1.1 (verified package `LICENSE`) | added, verified 2026-10-17 — bundled, nothing fetched |
 
 Fonts are bundled locally, never fetched from a CDN at runtime (offline-by-default; no network in the
 core loop).

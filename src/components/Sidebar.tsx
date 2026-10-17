@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { NAV_ITEMS, useAppStore, type SectionId } from "../state/store";
-import { IconChevron, IconHistory, IconHome, IconModels, IconPrivacy, IconSettings } from "./Icons";
+import { IconChevron, IconHistory, IconHome, IconModels, IconPrivacy, IconSettings, IconStats } from "./Icons";
 import { PrivacyChip } from "./PrivacyChip";
 
 const ICONS: Partial<Record<SectionId, ReactNode>> = {
   dashboard: <IconHome />,
   history: <IconHistory />,
+  stats: <IconStats />,
   models: <IconModels />,
   settings: <IconSettings />,
   privacy: <IconPrivacy />,

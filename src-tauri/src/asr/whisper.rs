@@ -9,6 +9,13 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use super::{join_segments, AsrError, CancelToken, Capabilities, LoadOptions, SpeechBackend, Transcription};
 
 pub const GPU_COMPILED: bool = cfg!(any(feature = "gpu-vulkan", feature = "gpu-cuda"));
+pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "gpu-cuda") {
+    Some("CUDA")
+} else if cfg!(feature = "gpu-vulkan") {
+    Some("Vulkan")
+} else {
+    None
+};
 /// Segments whisper rates above this no-speech probability are discarded.
 const NO_SPEECH_DROP: f32 = 0.6;
 
@@ -47,6 +54,9 @@ impl WhisperBackend {
             .ok_or_else(|| AsrError::LoadFailed("model path is not valid UTF-8".into()))?;
         let mut params = WhisperContextParameters::default();
         params.use_gpu(use_gpu);
+        // Measured 2026-10-17 (GTX 1080, Vulkan): Large v3 Turbo p50 939 → 729 ms, same WER. On
+        // the CPU it is slower (Small 5.1 → 6.5 s), so only GPU loads use it.
+        params.flash_attn(use_gpu);
         let ctx = WhisperContext::new_with_params(path_str, params)
             .map_err(|e| AsrError::LoadFailed(e.to_string()))?;
         let state = ctx
@@ -187,6 +197,7 @@ impl SpeechBackend for WhisperBackend {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             gpu_compiled: GPU_COMPILED,
+            gpu_backend: GPU_BACKEND,
             gpu_active: self.loaded.as_ref().is_some_and(|l| l.gpu_active),
             streaming: false,
             multilingual: self.loaded.as_ref().is_some_and(|l| l.multilingual),

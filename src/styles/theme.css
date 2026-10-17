@@ -27,11 +27,10 @@
   --r-row: 12px;
   --r-card: 18px;
 
-  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
-    "SF Pro Text", system-ui, "Ubuntu", "Cantarell", sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", -apple-system,
-    BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  /* Bundled (OFL 1.1): same look on every OS. Inter for text, JetBrains Mono for keys/numbers. */
+  --font: "Inter Variable", "Segoe UI", -apple-system, system-ui, sans-serif;
+  --font-display: "Inter Variable", "Segoe UI", -apple-system, system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", "Cascadia Mono", ui-monospace, Consolas, monospace;
 
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   color-scheme: dark;
@@ -595,7 +594,7 @@ select.input option {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
-  overflow: hidden;
+  /* visible: dropdown lists open over the next rows */
 }
 
 .group__title {
@@ -688,44 +687,388 @@ select.input option {
 
 .keys {
   display: inline-flex;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
 }
 
+/* Flat keycaps: quiet labels, not buttons (the field around them is the control). */
 kbd {
-  font: 500 12px/1 var(--font);
-  min-width: 24px;
+  font: 500 11.5px/1 var(--mono);
+  min-width: 22px;
   text-align: center;
-  padding: 5px 8px;
+  padding: 4px 7px;
   border-radius: 6px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
   color: var(--text-1);
+}
+
+.keys--lg {
+  gap: 6px;
+}
+
+.keys--lg kbd {
+  font-size: 15px;
+  padding: 9px 13px;
+  min-width: 38px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .shortcut {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 4px;
 }
 
-.shortcut__live {
+/* The whole field is the button: click it to record a new shortcut. */
+.keyfield {
   display: inline-flex;
   align-items: center;
-  min-width: 120px;
-  min-height: 30px;
-  padding: 0 10px;
+  gap: 10px;
+  min-width: 150px;
+  min-height: 34px;
+  justify-content: space-between;
+  padding: 4px 8px 4px 5px;
   border-radius: var(--r-control);
-  border: 1px dashed var(--accent);
-  background: rgba(91, 140, 255, 0.08);
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
 }
 
-.shortcut__error {
-  flex-basis: 100%;
-  text-align: right;
+.keyfield:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.keyfield:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.keyfield__placeholder {
+  color: var(--text-3);
+  padding-left: 6px;
+  font-size: 13px;
+}
+
+.keyfield__edit {
+  display: inline-grid;
+  color: var(--text-3);
+  transition: color 120ms var(--ease);
+}
+
+.keyfield__edit svg {
+  width: 13px;
+  height: 13px;
+}
+
+.keyfield:hover .keyfield__edit {
+  color: var(--text-1);
+}
+
+/* ---------- dialog ---------- */
+
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 7, 16, 0.6);
+  backdrop-filter: blur(3px);
+  animation: fade-in 140ms var(--ease);
+}
+
+.modal {
+  width: min(420px, calc(100vw - 48px));
+  padding: 22px 22px 18px;
+  border-radius: var(--r-card);
+  background: #161c36;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  outline: none;
+  animation: pop-in 160ms var(--ease);
+}
+
+.modal__title {
+  margin: 0 0 14px;
+}
+
+.modal__hint {
+  color: var(--text-2);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.modal__hint kbd {
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.capture {
+  display: grid;
+  place-items: center;
+  min-height: 84px;
+  border-radius: var(--r-row);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+}
+
+.capture--live {
+  border-color: rgba(91, 140, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(91, 140, 255, 0.1);
+  animation: listen 1.8s ease-in-out infinite;
+}
+
+.capture--refused {
+  border-color: rgba(255, 84, 102, 0.45);
+}
+
+.capture__prompt {
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.refusal {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.refusal strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.refusal svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--danger);
+  margin-top: 1px;
+}
+
+@keyframes listen {
+  50% {
+    box-shadow: 0 0 0 7px rgba(91, 140, 255, 0.04);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 9px 14px 9px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: #1b2242;
+  color: var(--text-1);
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: pop-in 160ms var(--ease);
+}
+
+.toast svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.toast--ok svg {
+  color: var(--success);
+}
+
+.toast--info svg {
+  color: var(--accent);
+}
+
+.toast--error {
+  border-color: rgba(255, 84, 102, 0.4);
+}
+
+.toast--error svg {
+  color: var(--danger);
+}
+
+/* ---------- dropdown ---------- */
+
+.select {
+  position: relative;
+  min-width: 200px;
+}
+
+.select__button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease);
+}
+
+.select__button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.select__button:focus-visible,
+.select--open .select__button {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.select__button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select__chevron {
+  flex: none;
+  width: 10px;
+  height: 6px;
+  color: var(--text-2);
+  transition: transform 140ms var(--ease);
+}
+
+.select--open .select__chevron {
+  transform: rotate(180deg);
+}
+
+.select__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  border-radius: var(--r-row);
+  border: 1px solid var(--line-strong);
+  background: #171d38;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  outline: none;
+  animation: pop-in 120ms var(--ease);
+}
+
+.select__list--up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 10px;
+  border-radius: var(--r-control);
+  white-space: nowrap;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.select__option--active {
+  background: var(--surface-strong);
+  color: var(--text-1);
+}
+
+.select__option[aria-selected="true"] {
+  color: var(--text-1);
+}
+
+.select__tick {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+/* ---------- tables (Stats) ---------- */
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-row);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-3);
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  padding: 8px 14px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.table tbody tr + tr td {
+  border-top: 1px solid var(--line);
 }
 
 /* ---------- status dots / chips ---------- */
@@ -1146,4 +1489,21 @@ details.details[open] summary::before {
     animation: none !important;
     transition: none !important;
   }
+}
+
+.actions__spacer {
+  flex: 1;
+}
+
+.stat__value--text {
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+.icon-btn--spacer {
+  visibility: hidden;
+}
+
+.keyfield {
+  min-width: 170px;
 }

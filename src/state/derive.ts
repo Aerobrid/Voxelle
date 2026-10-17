@@ -73,3 +73,56 @@ export function matchesQuery(e: HistoryEntry, q: string): boolean {
   if (!needle) return true;
   return e.rawTranscript.toLowerCase().includes(needle) || (e.editedText ?? "").toLowerCase().includes(needle);
 }
+
+export function fmtMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
+}
+
+/** Speaking pace in words per minute, or null with too little audio to mean anything. */
+export function wordsPerMinute(words: number, audioMs: number): number | null {
+  if (audioMs < 10_000 || words === 0) return null;
+  return Math.round(words / (audioMs / 60_000));
+}
+
+/** Real-time factor (processing time ÷ audio length) in plain words. */
+export function speedText(rtf: number): string {
+  if (!(rtf > 0)) return "—";
+  return rtf <= 1
+    ? `${(1 / rtf).toFixed(1)}× faster than real time`
+    : `${rtf.toFixed(1)}× slower than real time`;
+}
+
+export function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const v = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+/** Catalog models at least this large are slow on a CPU (Medium, Large v3 Turbo). */
+const HEAVY_MODEL_MB = 1000;
+
+/**
+ * Why dictation is slow and what to do, when a heavy model runs on the CPU; null otherwise.
+ * `measuredCpuRtf` is the model's real-time factor measured here on the CPU, if known.
+ */
+export function cpuAdvice(o: {
+  modelName: string;
+  memoryMb: number;
+  measuredCpuRtf: number | null;
+  gpuActive: boolean;
+  gpuCompiled: boolean;
+  preferGpu: boolean;
+}): string | null {
+  if (o.gpuActive || o.memoryMb < HEAVY_MODEL_MB) return null;
+  const cost =
+    o.measuredCpuRtf != null && o.measuredCpuRtf > 1
+      ? `about ${o.measuredCpuRtf.toFixed(1)}× as long as you spoke`
+      : "several times as long as you spoke";
+  const fix = !o.gpuCompiled
+    ? "This build can't use the GPU, so choose Whisper Small or Base for quick results."
+    : !o.preferGpu
+      ? "Turn on Use the GPU in Settings, or choose Whisper Small or Base for quick results on the CPU."
+      : "The GPU couldn't be used, so choose Whisper Small or Base for quick results.";
+  return `${o.modelName} is running on the CPU, where transcribing takes ${cost}. ${fix}`;
+}

@@ -26,6 +26,17 @@ OS/session, and actual result. "N/A yet" = feature not implemented. Never mark p
     release.
 12. Cancel: start recording, press cancel; confirm return to idle and mic released (check Windows
     mic-in-use indicator clears).
+13. **Shortcut recorder (physical keys):** Settings → click the Push to talk field.
+    a. Hold Ctrl, then Win, release both → dialog closes, toast "Push to talk is now Ctrl + Win";
+       hold Ctrl+Win in Notepad → dictation starts; the Start menu does not open.
+    b. Click the field, press a plain letter (e.g. A) → the dialog says it can't be used and why;
+       the letter still types normally in other apps afterwards.
+    c. Click the field, press the Windows key alone → refused; Start still opens normally afterwards.
+    d. Click the field, press Esc → dialog closes, shortcut unchanged.
+    e. Click the field and wait 15 s without pressing anything → "Stopped listening", no error.
+    f. Hold Ctrl, click the field with the mouse, release Ctrl → Ctrl is not stuck afterwards.
+14. **Your own model:** put a whisper.cpp `.bin` model in the model folder (Models → Open folder),
+    press Rescan → it appears as "Your file"; Use this model → dictate → works.
 
 ## Linux X11
 - As above; expect native paste via XTEST. Record results.
@@ -54,3 +65,8 @@ OS/session, and actual result. "N/A yet" = feature not implemented. Never mark p
 | 2026-10-15 | Windows / s3 | Copy via real app IPC + ignored clipboard tests | PASS — text read back from another process; deliberate copy carries no history-exclusion marker |
 | 2026-10-15 | Windows / s3 | User dictations after the capture fix (4 in a row, toggle + PTT shortcuts) | PASS — 4 consecutive dictations stored in History at 2:48–2:49 PM, no mic failure (observed in the app's History; user-side insertion not separately confirmed) |
 | 2026-10-15 | Windows / s3 | UI v2 window chrome via real buttons (CDP) | PASS — maximize ↔ restore, close hides to tray (process alive), 2nd launch shows it again |
+| 2026-10-17 | Windows / s4 | Bad shortcuts via the real app IPC (A, LeftWin, Ctrl+Alt, cancel = hands-free keys, Win+Shift+S) | PASS — all 5 refused with a reason; settings unchanged |
+| 2026-10-17 | Windows / s4 | Startup repair of the user's saved shortcuts | PASS — log: "Hands-free: Ctrl+Space → Ctrl+Shift+Space; Push to talk: LeftWin → RightCtrl"; not repeated on the next start (persisted) |
+| 2026-10-17 | Windows / s4 | Recorder dialog in the real app (CDP): open → 15 s idle | PASS — "Stopped listening", no error. Refusal / conflict / saved states rendered via injected recorder events; physical keys not pressed (step 13 still needs a person) |
+| 2026-10-17 | Windows / s4 | User model (hard link of Base under a new name) | PASS — listed as "Your file", selected via the UI, core loaded it on GPU (1.9 s); link removed, Turbo re-selected |
+| 2026-10-17 | Windows / s4 | CPU advice on Models (GPU switched off, Turbo) | PASS — notice shows the measured 8.1×; GPU switched back on |

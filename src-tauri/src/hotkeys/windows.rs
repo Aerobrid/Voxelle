@@ -5,6 +5,7 @@
 //! actions to the worker; it never takes a lock that dictation holds.
 
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -15,7 +16,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::capture::{Capture, CaptureUpdate};
-use super::{vk, Action, Matcher, SharedBindings};
+use super::{vk, Action, Matcher, Role, SharedBindings};
 
 type Sender = Box<dyn Fn(Action) + Send + Sync>;
 type Probe = Box<dyn Fn() -> bool + Send + Sync>;
@@ -29,8 +30,18 @@ struct HookCtx {
 }
 
 static CTX: OnceLock<HookCtx> = OnceLock::new();
-/// While set, every physical key goes to the recorder and nowhere else.
-static CAPTURE: Mutex<Option<(Capture, CaptureSink)>> = Mutex::new(None);
+
+struct Recording {
+    capture: Capture,
+    sink: CaptureSink,
+    last_key: Instant,
+}
+
+/// While set, physical keys go to the recorder and nowhere else.
+static CAPTURE: Mutex<Option<Recording>> = Mutex::new(None);
+/// Keys still held when recording ended: the recorder swallowed their key-down, so their key-up
+/// must be swallowed too, or the focused app (and the shortcut matcher) would see half a press.
+static DRAIN: Mutex<Vec<u16>> = Mutex::new(Vec::new());
 
 pub fn install(bindings: SharedBindings, send: Sender, session_active: Probe) -> Result<(), String> {
     CTX.set(HookCtx {
@@ -62,16 +73,33 @@ pub fn install(bindings: SharedBindings, send: Sender, session_active: Probe) ->
     ready_rx.recv().map_err(|e| e.to_string())?
 }
 
-pub fn begin_capture(sink: CaptureSink) -> Result<(), String> {
+pub fn begin_capture(role: Role, sink: CaptureSink) -> Result<(), String> {
     if CTX.get().is_none() {
         return Err("global shortcuts are unavailable, so keys cannot be recorded".into());
     }
-    *CAPTURE.lock().unwrap() = Some((Capture::default(), sink));
+    let previous = CAPTURE.lock().unwrap().replace(Recording { capture: Capture::new(role), sink, last_key: Instant::now() });
+    if let Some(p) = previous {
+        DRAIN.lock().unwrap().extend_from_slice(p.capture.held());
+    }
     Ok(())
 }
 
 pub fn end_capture() -> bool {
-    CAPTURE.lock().unwrap().take().is_some()
+    match CAPTURE.lock().unwrap().take() {
+        Some(r) => {
+            DRAIN.lock().unwrap().extend_from_slice(r.capture.held());
+            true
+        }
+        None => false,
+    }
+}
+
+/// How long the recorder has gone without a key event, or None if it is not recording. Never
+/// idle while a key is held, so a timeout cannot cut a press in half.
+pub fn capture_idle() -> Option<Duration> {
+    let guard = CAPTURE.lock().unwrap();
+    let r = guard.as_ref()?;
+    Some(if r.capture.held().is_empty() { r.last_key.elapsed() } else { Duration::ZERO })
 }
 
 /// Tap an unassigned key so that releasing a held Win key does not open the Start menu. Sent from
@@ -97,17 +125,28 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             let down = matches!(wparam as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
             let up = matches!(wparam as u32, WM_KEYUP | WM_SYSKEYUP);
             if !injected && (down || up) {
-                if let Ok(mut capture) = CAPTURE.try_lock() {
-                    if let Some((recorder, sink)) = capture.as_mut() {
-                        let update = recorder.on_key(info.vkCode as u16, down);
-                        let finished = matches!(update, Some(CaptureUpdate::Done { .. } | CaptureUpdate::Rejected { .. }));
+                let code = info.vkCode as u16;
+                {
+                    let mut capture = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
+                    // Key-ups of keys pressed before recording began pass through untouched.
+                    if let Some(rec) = capture.as_mut().filter(|r| down || r.capture.held().contains(&code)) {
+                        rec.last_key = Instant::now();
+                        let update = rec.capture.on_key(code, down);
+                        let finished = update.as_ref().is_some_and(|u| !matches!(u, CaptureUpdate::Progress { .. }));
                         if let Some(u) = update {
-                            sink(u);
+                            (rec.sink)(u); // only queues: emitting happens on another thread
                         }
                         if finished {
                             *capture = None;
                         }
                         return 1; // recording: the key does nothing else
+                    }
+                }
+                if up {
+                    let mut drain = DRAIN.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(i) = drain.iter().position(|c| *c == code) {
+                        drain.remove(i);
+                        return 1;
                     }
                 }
                 let outcome = match (ctx.bindings.try_read(), ctx.matcher.try_lock()) {

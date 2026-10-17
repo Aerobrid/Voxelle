@@ -4,7 +4,7 @@
 pub mod wer;
 mod whisper;
 
-pub use whisper::{default_threads, WhisperBackend, GPU_COMPILED};
+pub use whisper::{default_threads, WhisperBackend, GPU_BACKEND, GPU_COMPILED};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -29,6 +29,8 @@ pub enum AsrError {
 pub struct Capabilities {
     /// GPU acceleration compiled into this build (e.g. Vulkan).
     pub gpu_compiled: bool,
+    /// GPU API compiled in ("Vulkan" / "CUDA"), if any.
+    pub gpu_backend: Option<&'static str>,
     /// GPU is actually in use for the loaded model (false after a CPU fallback).
     pub gpu_active: bool,
     pub streaming: bool,

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Overlay } from "./Overlay";
+import "@fontsource-variable/inter";
 import "./overlay.css";
 
 const root = document.getElementById("overlay-root");

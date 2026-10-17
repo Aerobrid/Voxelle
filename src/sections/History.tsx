@@ -2,24 +2,23 @@ import { useState } from "react";
 import { core } from "../ipc/bridge";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
-import { useAppStore } from "../state/store";
+import { toast, useAppStore } from "../state/store";
 import { groupByDay, matchesQuery } from "../state/derive";
 import { IconCopy, IconTrash } from "../components/Icons";
 
 export function History() {
   const lastResult = useAppStore((s) => s.lastResult);
   const [q, reload] = useCore(() => core.getHistory(), [lastResult]);
-  const [note, setNote] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
 
-  const act = (p: Promise<unknown>, ok: string | null) =>
+  const act = (p: Promise<unknown>, ok: string, refresh = true) =>
     p.then(
       () => {
-        setNote(ok);
-        reload();
+        toast(ok);
+        if (refresh) reload();
       },
-      (e) => setNote(errorText(e)),
+      (e) => toast(errorText(e), "error"),
     );
 
   return (
@@ -33,7 +32,7 @@ export function History() {
           <div className="actions">
             <button
               className="btn btn--ghost btn--sm"
-              onClick={() => core.exportHistory().then((p) => setNote(`Exported to ${p}`), (e) => setNote(errorText(e)))}
+              onClick={() => core.exportHistory().then((p) => toast(`Exported to ${p}`), (e) => toast(errorText(e), "error"))}
             >
               Export
             </button>
@@ -61,7 +60,6 @@ export function History() {
         )}
       </div>
 
-      {note && <p className="muted small">{note}</p>}
       <Gate q={q}>
         {(entries) => {
           if (entries.length === 0) {
@@ -95,7 +93,7 @@ export function History() {
                           className="icon-btn"
                           title="Copy"
                           aria-label="Copy"
-                          onClick={() => act(core.copyText(e.editedText ?? e.rawTranscript), "Copied to the clipboard.")}
+                          onClick={() => act(core.copyText(e.editedText ?? e.rawTranscript), "Copied to the clipboard.", false)}
                         >
                           <IconCopy />
                         </button>

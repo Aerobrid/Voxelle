@@ -12,6 +12,7 @@ import type {
   SessionSnapshot,
   Settings,
   ShortcutCaptureUpdate,
+  ShortcutRole,
   StorageInfo,
 } from "./types";
 
@@ -74,6 +75,7 @@ export const core = {
   verifyModel: (id: string) => call<boolean>("verify_model", { id }),
   asrCapabilities: () => call<AsrCapabilities>("asr_capabilities"),
   getModelDir: () => call<string>("get_model_dir"),
+  openModelFolder: () => call<void>("open_model_folder"),
 
   getHistory: () => call<HistoryEntry[]>("get_history"),
   deleteHistoryEntry: (id: string) => call<void>("delete_history_entry", { id }),
@@ -87,6 +89,6 @@ export const core = {
     call<HistoryEntry>("set_history_edit", { id, editedText }),
 
   /** Record the next keys pressed as a shortcut; updates arrive via onShortcutCapture. */
-  startShortcutCapture: () => call<void>("start_shortcut_capture"),
+  startShortcutCapture: (role: ShortcutRole) => call<void>("start_shortcut_capture", { role }),
   cancelShortcutCapture: () => call<void>("cancel_shortcut_capture"),
 };

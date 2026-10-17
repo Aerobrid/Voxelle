@@ -90,6 +90,7 @@ pub fn run() {
             commands::copy_text,
             commands::set_history_edit,
             commands::get_model_dir,
+            commands::open_model_folder,
             commands::export_history,
             commands::storage_info,
             commands::start_shortcut_capture,

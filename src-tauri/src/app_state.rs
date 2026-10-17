@@ -48,6 +48,13 @@ impl AppState {
         };
         let mut settings = store.load_settings().ok().flatten().unwrap_or_default();
         crate::hotkeys::canonicalize(&mut settings);
+        let repaired = crate::hotkeys::repair(&mut settings);
+        if !repaired.is_empty() {
+            eprintln!("[voxelle] reset shortcuts that are no longer allowed: {}", repaired.join("; "));
+            if let Err(e) = store.save_settings(&settings) {
+                eprintln!("[voxelle] could not save the repaired shortcuts: {e}");
+            }
+        }
         let keep_mic = settings.keep_mic_ready();
         let model_dir = settings.model_dir.clone().map(PathBuf::from).unwrap_or_else(|| default_model_dir.clone());
 

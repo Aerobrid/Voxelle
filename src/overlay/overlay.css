@@ -6,7 +6,7 @@ body.overlay-body,
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter Variable", "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }

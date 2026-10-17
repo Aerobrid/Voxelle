@@ -91,9 +91,13 @@ pub fn list_models(state: State<AppState>) -> Vec<ModelInfo> {
 
 #[tauri::command]
 pub fn select_model(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
-    let entry = catalog_entry(&id).ok_or_else(|| format!("unknown model: {id}"))?;
-    if !models::is_installed(&state.model_dir(), entry) {
-        return Err(format!("{} is not installed", entry.name));
+    match catalog_entry(&id) {
+        Some(entry) if !models::is_installed(&state.model_dir(), entry) => {
+            return Err(format!("{} is not installed", entry.name))
+        }
+        Some(_) => {}
+        None if models::user_model(&state.model_dir(), &id).is_some() => {}
+        None => return Err(format!("unknown model: {id}")),
     }
     {
         let mut s = state.settings.lock().unwrap();
@@ -112,7 +116,9 @@ pub async fn verify_model(app: AppHandle, id: String) -> Result<bool, String> {
     blocking(move || {
         use tauri::Manager;
         let state = app.state::<AppState>();
-        let entry = catalog_entry(&id).ok_or_else(|| format!("unknown model: {id}"))?;
+        let entry = catalog_entry(&id).ok_or_else(|| {
+            "There is no published checksum for a file you added, so it can't be verified.".to_string()
+        })?;
         let path = models::model_path(&state.model_dir(), entry);
         let ok = models::has_ggml_magic(&path).unwrap_or(false)
             && models::verify_file(&path, entry.size_bytes, entry.sha256).map_err(|e| e.to_string())?
@@ -234,11 +240,26 @@ pub fn get_model_dir(state: State<AppState>) -> String {
     state.model_dir().display().to_string()
 }
 
+/// Show the model folder in the system file manager (so the user can add or remove model files).
+/// The path comes from app state, never from the renderer.
+#[tauri::command]
+pub fn open_model_folder(state: State<AppState>) -> Result<(), String> {
+    let dir = state.model_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let program = "xdg-open";
+    std::process::Command::new(program).arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Record the next shortcut the user presses (see hotkeys::begin_capture); results arrive as
 /// `shortcut_capture` events. Saving is a separate `update_settings` call.
 #[tauri::command]
-pub fn start_shortcut_capture(app: AppHandle) -> Result<(), String> {
-    crate::hotkeys::begin_capture(&app)
+pub fn start_shortcut_capture(app: AppHandle, role: crate::hotkeys::Role) -> Result<(), String> {
+    crate::hotkeys::begin_capture(&app, role)
 }
 
 #[tauri::command]

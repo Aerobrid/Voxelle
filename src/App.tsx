@@ -8,6 +8,8 @@ import { History } from "./sections/History";
 import { ModelManager } from "./sections/ModelManager";
 import { Settings } from "./sections/Settings";
 import { Privacy } from "./sections/Privacy";
+import { Stats } from "./sections/Stats";
+import { Toasts } from "./components/Toasts";
 import { Planned } from "./sections/Planned";
 
 const PLANNED_NOTES: Record<string, string> = {
@@ -36,6 +38,7 @@ export default function App() {
       <main className="main">
         {section === "dashboard" && <Dashboard />}
         {section === "history" && <History />}
+        {section === "stats" && <Stats />}
         {section === "models" && <ModelManager />}
         {section === "settings" && <Settings />}
         {section === "privacy" && <Privacy />}
@@ -44,6 +47,7 @@ export default function App() {
         {section === "notes" && <Planned title="Notes" note={PLANNED_NOTES.notes} />}
         {section === "audio-import" && <Planned title="Audio Import" note={PLANNED_NOTES["audio-import"]} />}
       </main>
+      <Toasts />
     </div>
   );
 }

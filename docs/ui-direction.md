@@ -116,3 +116,20 @@ while recording; everything static under `prefers-reduced-motion`.
 
 **Tray glyph:** still the full-colour app icon. A simplified monochrome 3-bar glyph for 16 px is
 proposed (derived, originals untouched) and pending user approval.
+
+## v2.1 (2026-10-17) — feedback pass
+User feedback: the key chips looked like buttons next to a separate "Change" button (confusing,
+jarring); dropdowns opened as square OS lists; errors were small red text; wanted a nicer font.
+- **Typography (changed again):** bundle **Inter** (UI) and **JetBrains Mono** (keys, numbers,
+  paths), both OFL 1.1, served from the app (no network). Same look on every OS; replaces the
+  platform-font choice of v2.
+- **Shortcut field:** one control — a quiet field holding flat mono keycaps plus a small pencil;
+  clicking it opens a dialog that listens. Turning a shortcut off is a small × beside it (a spacer
+  keeps fields aligned when there is none).
+- **Dialogs for decisions, toasts for confirmations:** a refused shortcut explains why in the
+  dialog (red outline + alert glyph, "Try again"); successful saves, copies and model switches are a
+  short bottom-center pill toast with a check glyph. Error toasts stay twice as long.
+- **Dropdown:** our own listbox with the card radius (12 px), raised surface, check on the chosen
+  option, flips upward near the window edge.
+- **Developer numbers off Home:** timings and the slow-mic note moved to a Stats page; Home keeps
+  words, dictations and words-per-minute today.
