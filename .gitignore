@@ -4,6 +4,8 @@
 *.onnx
 *.safetensors
 models/
+# ...but not the Rust module that manages them (source code only, no weights).
+!src-tauri/src/models/
 *.db
 *.sqlite
 *.sqlite3
