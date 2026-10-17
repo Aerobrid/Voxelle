@@ -271,3 +271,8 @@ Append-only record of non-obvious choices. Format: date — decision — why —
 - Shipping risk found: GGML_NATIVE builds for the build machine's CPU (AVX-512 here); a release
   build must use portable CPU variants or it will crash on CPUs without AVX-512. Tracked for the
   release/CPU-build P0 item.
+
+## 2026-10-17 — GPU: Vulkan only, no CUDA or runtime backend picker
+- User decision: Vulkan covers every user with a modern GPU (NVIDIA/AMD/Intel) and is fast enough
+  (Turbo ~0.15× real time on a GTX 1080). CUDA builds, NVIDIA runtime redistribution, and a
+  per-device backend picker are not pursued. The GPU switch + automatic CPU fallback stay as is.
