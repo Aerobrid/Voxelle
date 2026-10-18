@@ -37,16 +37,24 @@ fn main() {
         let start_ms = t.elapsed().as_millis();
         std::thread::sleep(Duration::from_millis(2500));
         let first_audio = cap.first_audio_ms();
+        let t_stop = Instant::now();
         let audio = cap.stop().expect("stop");
+        let stop_ms = t_stop.elapsed().as_millis();
         let first = audio.pcm.iter().position(|s| s.abs() > 1e-4).unwrap_or(audio.pcm.len());
         println!(
-            "round {round}: start {start_ms} ms, first audio after {first_audio:?} ms, captured {} ms of 2500, digital silence before first sample {} ms, mic still open: {}",
+            "round {round}: start {start_ms} ms, stop {stop_ms} ms, rate {} Hz, first audio after {first_audio:?} ms, captured {} ms of 2500, digital silence before first sample {} ms, mic still open: {}",
+            audio.sample_rate,
             audio.duration_ms(),
             first as u64 * 1000 / audio.sample_rate as u64,
             cap.is_open()
         );
         if model.is_some() {
-            let _ = asr.transcribe(&audio.to_asr_rate(), Some("en"), &CancelToken::default());
+            let t = Instant::now();
+            let pcm = audio.to_asr_rate();
+            let resample_ms = t.elapsed().as_millis();
+            let t = Instant::now();
+            let _ = asr.transcribe(&pcm, Some("en"), &CancelToken::default());
+            println!("round {round}: resample {resample_ms} ms, transcribe {} ms", t.elapsed().as_millis());
         }
         let _ = voxelle_core::insert::copy_text("voxelle capture_repeat probe");
     }

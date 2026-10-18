@@ -35,6 +35,8 @@ OS/session, and actual result. "N/A yet" = feature not implemented. Never mark p
     d. Click the field, press Esc → dialog closes, shortcut unchanged.
     e. Click the field and wait 15 s without pressing anything → "Stopped listening", no error.
     f. Hold Ctrl, click the field with the mouse, release Ctrl → Ctrl is not stuck afterwards.
+    g. Click the field, hold Ctrl+Shift, release → saved (this PC has one keyboard layout).
+    h. Run a long CPU transcription (GPU off, Turbo), then use your shortcut → still works.
 14. **Your own model:** put a whisper.cpp `.bin` model in the model folder (Models → Open folder),
     press Rescan → it appears as "Your file"; Use this model → dictate → works.
 

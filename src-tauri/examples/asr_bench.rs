@@ -1,6 +1,6 @@
 //! Repeatable ASR benchmark over bench/corpus using the exact backend the app runs.
 //!
-//!   cargo run --release --example asr_bench -- --model <file.bin> --corpus ../bench/corpus [--gpu]
+//!   cargo run --release --example asr_bench -- --model <file.bin> --corpus ../bench/corpus [--gpu] [--gap <secs>] [--limit <n>]
 //!
 //! Prints per-clip results and one JSON summary line (prefixed "RESULT ").
 
@@ -16,6 +16,10 @@ struct Args {
     gpu: bool,
     threads: usize,
     language: Option<String>,
+    /// Idle seconds before each clip, like the pauses between real dictations (GPU clocks drop).
+    gap_secs: u64,
+    /// Only the first N clips.
+    limit: usize,
 }
 
 fn parse_args() -> Args {
@@ -25,6 +29,8 @@ fn parse_args() -> Args {
         gpu: false,
         threads: voxelle_core::asr::default_threads(),
         language: Some("en".into()),
+        gap_secs: 0,
+        limit: usize::MAX,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -34,6 +40,8 @@ fn parse_args() -> Args {
             "--gpu" => a.gpu = true,
             "--threads" => a.threads = it.next().expect("--threads <n>").parse().expect("number"),
             "--auto-language" => a.language = None,
+            "--gap" => a.gap_secs = it.next().expect("--gap <secs>").parse().expect("number"),
+            "--limit" => a.limit = it.next().expect("--limit <n>").parse().expect("number"),
             other => panic!("unknown flag {other}"),
         }
     }
@@ -64,6 +72,7 @@ fn main() {
         .lines()
         .skip(1)
         .filter_map(|l| l.split_once('\t'))
+        .take(args.limit)
         .map(|(id, text)| {
             let pcm = read_wav(&args.corpus.join("audio").join(format!("{id}.wav")));
             (id.to_string(), text.to_string(), pcm)
@@ -89,6 +98,7 @@ fn main() {
     let (mut total_ms, mut audio_ms, mut errs, mut words) = (0f64, 0f64, 0usize, 0usize);
     let mut per_clip = Vec::new();
     for (id, reference, pcm) in &clips {
+        std::thread::sleep(std::time::Duration::from_secs(args.gap_secs));
         let t = Instant::now();
         let out = backend.transcribe(pcm, lang, &cancel).expect("transcribe");
         let ms = t.elapsed().as_secs_f64() * 1000.0;

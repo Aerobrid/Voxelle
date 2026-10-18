@@ -276,3 +276,16 @@ Append-only record of non-obvious choices. Format: date — decision — why —
 - User decision: Vulkan covers every user with a modern GPU (NVIDIA/AMD/Intel) and is fast enough
   (Turbo ~0.15× real time on a GTX 1080). CUDA builds, NVIDIA runtime redistribution, and a
   per-device backend picker are not pursued. The GPU switch + automatic CPU fallback stay as is.
+
+## 2026-10-17 — Keyboard hook self-repair; layout chords only refused when actually used
+- Windows silently removes a WH_KEYBOARD_LL hook that misses `LowLevelHooksTimeout` once (no
+  notification). The user's recorder showed no keys at all (not even a refusal), so the hook was
+  gone. Fix: hook thread runs at THREAD_PRIORITY_TIME_CRITICAL (it only wakes per key), and the
+  hook is re-installed every 30 s, after each transcription, and when the recorder opens (new hook
+  first, then unhook the old, on the hook thread, so no key is lost or seen twice). Periodic
+  injected test keys were rejected as a health check: they would reset the system idle timer.
+- Ctrl+Shift / Alt+Shift were always refused as layout-switch chords. Windows only acts on them
+  with 2+ keyboard layouts, and `HKCU\Keyboard Layout\Toggle` says which one does what. Now they
+  are refused only when this PC uses them (the user's PC: one layout → both allowed). Ctrl+Alt
+  stays refused (AltGr). Note for push-to-talk on Ctrl+Shift: Ctrl+Shift+Arrow in editors briefly
+  starts and then cancels a recording (existing chord rule).

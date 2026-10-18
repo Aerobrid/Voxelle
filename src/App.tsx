@@ -25,10 +25,17 @@ export default function App() {
   const setLastResult = useAppStore((s) => s.setLastResult);
 
   useEffect(() => {
+    // Subscribing is async: if cleanup runs first (React StrictMode mounts twice), unsubscribe as
+    // soon as the subscription lands, or every result would arrive twice.
+    let disposed = false;
     const unsubs: Array<() => void> = [];
-    onSessionUpdate(setSnapshot).then((fn) => unsubs.push(fn));
-    onDictationResult(setLastResult).then((fn) => unsubs.push(fn));
-    return () => unsubs.forEach((u) => u());
+    const keep = (fn: () => void) => (disposed ? fn() : unsubs.push(fn));
+    onSessionUpdate(setSnapshot).then(keep);
+    onDictationResult(setLastResult).then(keep);
+    return () => {
+      disposed = true;
+      unsubs.forEach((u) => u());
+    };
   }, [setSnapshot, setLastResult]);
 
   return (

@@ -350,7 +350,32 @@ const WINDOWS_SHORTCUTS: &[&str] = &[
 
 /// Our rules for a global shortcut: it must not take over typing, editing, or a key combination
 /// that Windows or nearly every app already uses. The message says how to pick a better one.
+/// Two-modifier chords Windows uses to switch keyboard layout or input language on this computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayoutHotkeys {
+    pub ctrl_shift: bool,
+    pub alt_shift: bool,
+}
+
+impl LayoutHotkeys {
+    /// Assume both are taken (used when the system cannot be asked).
+    pub const ALL: Self = Self { ctrl_shift: true, alt_shift: true };
+    pub const NONE: Self = Self { ctrl_shift: false, alt_shift: false };
+}
+
+/// What this computer uses for layout switching. Only one layout installed = nothing to switch.
+pub fn layout_hotkeys() -> LayoutHotkeys {
+    #[cfg(windows)]
+    return windows::layout_hotkeys();
+    #[cfg(not(windows))]
+    LayoutHotkeys::ALL
+}
+
 pub fn check_allowed(b: &Binding, role: Role) -> Result<(), String> {
+    check_allowed_with(b, role, layout_hotkeys())
+}
+
+pub fn check_allowed_with(b: &Binding, role: Role, layouts: LayoutHotkeys) -> Result<(), String> {
     let text = format_binding(b);
     if WINDOWS_SHORTCUTS.iter().any(|w| w.eq_ignore_ascii_case(&text)) {
         return Err(format!("Windows already uses {}.", spaced(&text)));
@@ -360,11 +385,14 @@ pub fn check_allowed(b: &Binding, role: Role) -> Result<(), String> {
             Err("The Windows key on its own opens Start. Pair it with another modifier, like Ctrl + Win.".into())
         }
         Binding::ModifierOnly { .. } => Ok(()),
-        Binding::ModifierChord { mods } if mods.count() == 2 && !mods.win => Err(if mods.ctrl && mods.alt {
-            "Ctrl + Alt is the AltGr key on many keyboard layouts, so it would fire while typing. Try Ctrl + Win.".into()
-        } else {
-            format!("Windows can use {} to switch keyboard layouts. Try Ctrl + Win.", spaced(&text))
-        }),
+        Binding::ModifierChord { mods } if mods.count() == 2 && mods.ctrl && mods.alt => {
+            Err("Ctrl + Alt is the AltGr key on many keyboard layouts, so it would fire while typing. Try Ctrl + Win.".into())
+        }
+        Binding::ModifierChord { mods }
+            if mods.count() == 2 && mods.shift && ((mods.ctrl && layouts.ctrl_shift) || (mods.alt && layouts.alt_shift)) =>
+        {
+            Err(format!("Windows uses {} to switch keyboard layouts on this computer. Try Ctrl + Win.", spaced(&text)))
+        }
         Binding::ModifierChord { .. } => Ok(()),
         Binding::Combo { mods, vk } => {
             let key = key_name(vk).unwrap_or_default();
@@ -794,6 +822,13 @@ pub fn begin_capture(app: &AppHandle, role: Role) -> Result<(), String> {
     Ok(())
 }
 
+/// Re-install the keyboard hook in case Windows dropped it (it does so silently when the hook
+/// thread is starved, e.g. by a long CPU transcription).
+pub fn refresh_hook() {
+    #[cfg(windows)]
+    windows::refresh();
+}
+
 /// Stop recording. Returns true if a recording was still in progress.
 pub fn end_capture() -> bool {
     #[cfg(windows)]
@@ -1098,9 +1133,20 @@ mod tests {
     #[test]
     fn layout_switch_altgr_and_windows_shortcuts_are_refused() {
         for s in ["Ctrl+Alt", "Alt+Shift", "Ctrl+Shift", "Win+Shift+S", "Ctrl+Win+D", "Alt+F4", "Ctrl+Shift+Escape"] {
-            let err = check_allowed(&parse_binding(s).unwrap(), Role::Toggle).unwrap_err();
+            let err = check_allowed_with(&parse_binding(s).unwrap(), Role::Toggle, LayoutHotkeys::ALL).unwrap_err();
             assert!(!err.is_empty(), "{s}");
         }
+    }
+
+    #[test]
+    fn layout_chords_are_allowed_when_this_computer_does_not_use_them() {
+        let allowed = |s: &str, l| check_allowed_with(&parse_binding(s).unwrap(), Role::PushToTalk, l).is_ok();
+        assert!(allowed("Ctrl+Shift", LayoutHotkeys::NONE));
+        assert!(allowed("Alt+Shift", LayoutHotkeys::NONE));
+        assert!(!allowed("Ctrl+Alt", LayoutHotkeys::NONE), "AltGr is never safe");
+        let only_alt = LayoutHotkeys { ctrl_shift: false, alt_shift: true };
+        assert!(allowed("Ctrl+Shift", only_alt));
+        assert!(!allowed("Alt+Shift", only_alt));
     }
 
     #[test]

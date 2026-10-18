@@ -4,7 +4,7 @@
 //!
 //! The shortcut is the largest set of keys held at once, finalized when every key is released.
 
-use super::{check_allowed, format_binding, is_modifier, key_name, parse_binding, reserved_name, vk, Role};
+use super::{check_allowed_with, LayoutHotkeys, format_binding, is_modifier, key_name, parse_binding, reserved_name, vk, Role};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -24,6 +24,7 @@ pub enum CaptureUpdate {
 #[derive(Debug)]
 pub struct Capture {
     role: Role,
+    layouts: LayoutHotkeys,
     held: Vec<u16>,
     peak: Vec<u16>,
 }
@@ -63,8 +64,15 @@ pub fn shortcut_for(keys: &[u16]) -> Result<String, String> {
 }
 
 impl Capture {
+    /// Conservative: assumes Windows uses Ctrl+Shift and Alt+Shift for layout switching.
     pub fn new(role: Role) -> Self {
-        Self { role, held: Vec::new(), peak: Vec::new() }
+        Self::with_layouts(role, LayoutHotkeys::ALL)
+    }
+
+    /// `layouts` is read once up front: the recorder runs inside the keyboard hook, which must not
+    /// query the system.
+    pub fn with_layouts(role: Role, layouts: LayoutHotkeys) -> Self {
+        Self { role, layouts, held: Vec::new(), peak: Vec::new() }
     }
 
     /// Keys whose key-down the recorder took. Only their key-ups belong to it: swallowing the
@@ -99,7 +107,7 @@ impl Capture {
             }
             let checked = shortcut_for(&peak).and_then(|s| {
                 let binding = parse_binding(&s).map_err(|e| e.to_string())?;
-                check_allowed(&binding, self.role).map(|_| s)
+                check_allowed_with(&binding, self.role, self.layouts).map(|_| s)
             });
             return Some(match checked {
                 Ok(shortcut) => CaptureUpdate::Done { shortcut },
@@ -176,6 +184,14 @@ mod tests {
         assert!(matches!(last(press(&mut toggle, &[vk::LCONTROL, vk::ESCAPE])), CaptureUpdate::Rejected { .. }));
         let mut cancel = Capture::new(Role::Cancel);
         assert_eq!(last(press(&mut cancel, &[vk::ESCAPE])), CaptureUpdate::Done { shortcut: "Escape".into() });
+    }
+
+    #[test]
+    fn ctrl_shift_records_when_windows_does_not_use_it() {
+        let mut c = Capture::with_layouts(Role::PushToTalk, LayoutHotkeys::NONE);
+        assert_eq!(last(press(&mut c, &[vk::LCONTROL, vk::LSHIFT])), CaptureUpdate::Done { shortcut: "Ctrl+Shift".into() });
+        let mut c = Capture::new(Role::PushToTalk);
+        assert!(matches!(last(press(&mut c, &[vk::LCONTROL, vk::LSHIFT])), CaptureUpdate::Rejected { .. }));
     }
 
     #[test]

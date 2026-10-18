@@ -5,7 +5,7 @@ Status vocabulary (principles.md #8): **implemented** · **experimental** · **p
 observed working by a command that was run. "experimental" = code + unit tests exist, not yet
 observed end-to-end in the running app.
 
-_Last updated: 2026-10-17 (session 4 — shortcut rules + recorder dialog, startup repair of bad
+_Last updated: 2026-10-17 (session 5 — hook self-repair, Ctrl+Shift when unused, Stats double count; session 4 — shortcut rules + recorder dialog, startup repair of bad
 saved shortcuts, toasts, custom dropdown, bundled Inter/JetBrains Mono, Stats page, your-own-model
 support, GPU flash attention (−22% on Turbo), CPU advice, CUDA build attempt (blocked by toolchain))._
 
@@ -18,9 +18,11 @@ support, GPU flash attention (−22% on Turbo), CPU advice, CUDA build attempt (
 | 0.1 | "Starting mic…" until first audio + slow-mic hint | experimental | `first_audio_ms` measured per recording (probe); overlay label unit-tested; not yet seen during a real Bluetooth start-up
 | 0.1 | Input device selection + level meter | experimental | `list_input_devices`, Settings dropdown, 20 Hz level events; not yet observed |
 | 0.1 | Device-disconnect recovery | experimental | cpal error → `disconnected` flag → session Failed + mic released; not exercised |
+| 0.1 | Stats: each dictation counted once | implemented (fix) | Was counted twice: StrictMode double-mount left a stale result listener (async subscribe). Fixed in App.tsx; tsc + 24 tests pass |
 | 0.1 | Global toggle / push-to-talk / cancel (Windows) | experimental | WH_KEYBOARD_LL hook + pure matcher (16 tests incl. Ctrl+Win chords + Start-menu mask). User's toggle hotkey started/stopped a real dictation once (2026-10-15); PTT/cancel/chords not yet exercised by a person |
 | 0.1 | Shortcut recorder (press keys, incl. Win) | implemented (core) / experimental (physical keys in the dialog) | `hotkeys/capture.rs` 12 tests (role rules, Esc backs out, only owned key-ups swallowed). Real app 2026-10-17: dialog opens, 15 s idle → "Stopped listening" (no error); refusal, save-conflict and saved+toast states rendered from injected recorder events. A person pressing Ctrl+Win / a letter / Win in the dialog: not yet (manual-tests step 13) |
-| 0.1 | Shortcut rules (no plain/typing keys, no Win alone, no AltGr/layout chords, no Windows shortcuts, no shared keys) | implemented | 9 new tests; real app IPC refused A, LeftWin, Ctrl+Alt, a duplicate, Win+Shift+S with readable reasons |
+| 0.1 | Keyboard hook self-repair (re-installed every 30 s, after each transcription, and when the recorder opens; hook thread at time-critical priority) | experimental | Windows silently drops an LL hook that misses its timeout (likely during the user's 51 s CPU transcription → recorder saw no keys). 101 unit tests pass; app rebuilt. Not yet confirmed by a person pressing keys (manual-tests step 13) |
+| 0.1 | Shortcut rules (no plain/typing keys, no Win alone, no AltGr, no layout chords that this PC uses (Ctrl+Shift / Alt+Shift allowed with one layout), no Windows shortcuts, no shared keys) | implemented | 9 new tests; real app IPC refused A, LeftWin, Ctrl+Alt, a duplicate, Win+Shift+S with readable reasons |
 | 0.1 | Startup repair of saved shortcuts the rules refuse | implemented | 2 tests; real app reset the user's LeftWin push-to-talk + Ctrl+Space hands-free to defaults (logged, persisted) |
 | 0.1 | Tray icon, close-to-tray, single instance | implemented (window/instance) / experimental (tray menu) | 2026-10-15 real app: WM_CLOSE → window hidden, process alive; launching a 2nd instance → 1 process, window shown. Tray created without error; menu items not yet clicked |
 | 0.1 | Recording indicator overlay | experimental | window verified created hidden with WS_EX_NOACTIVATE + WS_EX_TRANSPARENT (click-through) + topmost; showing during a session not yet observed

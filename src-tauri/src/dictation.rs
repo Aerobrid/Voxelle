@@ -220,6 +220,7 @@ pub fn stop(app: &AppHandle) -> Result<DictationResult, String> {
         r
     };
     metrics.stop_to_transcript_ms = stop_requested.elapsed().as_millis() as u64;
+    crate::hotkeys::refresh_hook(); // transcription may have starved the hook thread
     metrics.real_time_factor = if metrics.audio_ms > 0 {
         metrics.transcribe_ms as f32 / (pcm.len() as f32 * 1000.0 / ASR_SAMPLE_RATE as f32)
     } else {
