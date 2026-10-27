@@ -1,6 +1,8 @@
-// Shortcut field. Clicking it opens a small dialog that listens for keys: the core's keyboard hook
-// records them (so the Win key works and doesn't open Start) and the shortcut is checked when every
-// key is released. Accepted → saved and confirmed with a toast; refused → the dialog says why.
+// Shortcut field. Clicking it opens a small dialog that listens for keys:
+// It captures keys via DOM keyboard events in the focused window AND via the core's keyboard hook,
+// so all shortcuts (Ctrl+Shift+A, Space, F-keys, and the Win key) work reliably.
+// The shortcut is checked when every key is released. Accepted → saved and confirmed with a toast;
+// refused → the dialog says why.
 import { useEffect, useRef, useState } from "react";
 import { core, onShortcutCapture } from "../ipc/bridge";
 import type { ShortcutRole } from "../ipc/types";
@@ -8,6 +10,7 @@ import { errorText } from "../state/useCore";
 import { toast } from "../state/store";
 import { Modal } from "./Modal";
 import { IconAlert, IconClose, IconPencil } from "./Icons";
+import { formatShortcutFromCodes, keyNameFromCode } from "./shortcutUtils";
 
 export function KeyChips({ shortcut, size }: { shortcut: string; size?: "lg" }) {
   return (
@@ -47,10 +50,14 @@ export function ShortcutRecorder({
   const [phase, setPhase] = useState<Phase>({ kind: "closed" });
   const unlisten = useRef<(() => void) | null>(null);
   const lastKeys = useRef<string | null>(null);
+  const heldCodes = useRef<Set<string>>(new Set());
+  const peakCodes = useRef<string[]>([]);
 
   const stopListening = () => {
     unlisten.current?.();
     unlisten.current = null;
+    heldCodes.current.clear();
+    peakCodes.current = [];
   };
 
   // Never leave the recorder swallowing keys if this field goes away mid-recording.
@@ -80,9 +87,89 @@ export function ShortcutRecorder({
     );
   };
 
+  const close = () => {
+    if (unlisten.current || phase.kind !== "closed") {
+      stopListening();
+      core.cancelShortcutCapture().catch(() => {});
+    }
+    setPhase({ kind: "closed" });
+  };
+
+  // Listen for physical keyboard events in the DOM while recording
+  useEffect(() => {
+    if (phase.kind !== "listening") {
+      heldCodes.current.clear();
+      peakCodes.current = [];
+      return;
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Escape on its own cancels recording (unless Cancel shortcut itself is being recorded)
+      if (e.code === "Escape" && role !== "cancel" && heldCodes.current.size === 0) {
+        close();
+        return;
+      }
+
+      if (heldCodes.current.has(e.code)) {
+        return; // auto-repeat
+      }
+
+      heldCodes.current.add(e.code);
+      const current = Array.from(heldCodes.current);
+      if (current.length >= peakCodes.current.length) {
+        peakCodes.current = current;
+      }
+
+      const formatted = formatShortcutFromCodes(current);
+      const display =
+        formatted.shortcut ??
+        current.map((c) => keyNameFromCode(c) ?? c).join("+");
+      lastKeys.current = display;
+      setPhase({ kind: "listening", live: display });
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const wasHeld = heldCodes.current.has(e.code);
+      heldCodes.current.delete(e.code);
+
+      if (wasHeld && heldCodes.current.size === 0 && peakCodes.current.length > 0) {
+        const peak = peakCodes.current;
+        peakCodes.current = [];
+        const res = formatShortcutFromCodes(peak);
+        if (res.error) {
+          stopListening();
+          core.cancelShortcutCapture().catch(() => {});
+          setPhase({ kind: "refused", reason: res.error, keys: lastKeys.current });
+          return;
+        }
+        if (res.shortcut) {
+          stopListening();
+          core.cancelShortcutCapture().catch(() => {});
+          save(res.shortcut);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [phase.kind, role]);
+
   const listen = async () => {
     stopListening();
     lastKeys.current = null;
+    heldCodes.current.clear();
+    peakCodes.current = [];
     setPhase({ kind: "listening", live: "" });
     const off = await onShortcutCapture((u) => {
       switch (u.kind) {
@@ -112,17 +199,8 @@ export function ShortcutRecorder({
     try {
       await core.startShortcutCapture(role);
     } catch (e) {
-      stopListening();
-      setPhase({ kind: "refused", reason: errorText(e), keys: null });
+      console.warn("Global shortcut capture init:", e);
     }
-  };
-
-  const close = () => {
-    if (unlisten.current) {
-      stopListening();
-      core.cancelShortcutCapture().catch(() => {});
-    }
-    setPhase({ kind: "closed" });
   };
 
   const turnOff = () =>

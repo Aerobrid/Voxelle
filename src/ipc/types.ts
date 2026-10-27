@@ -84,7 +84,7 @@ export interface ModelInfo {
 
 export interface AsrCapabilities {
   gpuCompiled: boolean;
-  /** GPU API in this build ("Vulkan" / "CUDA"), null for CPU-only builds. */
+  /** GPU API in this build ("Vulkan"), null for CPU-only builds. */
   gpuBackend: string | null;
   gpuActive: boolean;
   streaming: boolean;

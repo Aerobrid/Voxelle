@@ -254,3 +254,21 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     }
     CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hook_install_and_reinstall() {
+        unsafe {
+            let h1 = install_hook();
+            println!("Initial hook: {:?}", h1);
+            assert!(!h1.is_null(), "install_hook failed");
+            let h2 = reinstall(h1);
+            println!("Reinstalled hook: {:?}", h2);
+            assert!(!h2.is_null(), "reinstall failed");
+            UnhookWindowsHookEx(h2);
+        }
+    }
+}

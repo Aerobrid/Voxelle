@@ -29,7 +29,7 @@ pub enum AsrError {
 pub struct Capabilities {
     /// GPU acceleration compiled into this build (e.g. Vulkan).
     pub gpu_compiled: bool,
-    /// GPU API compiled in ("Vulkan" / "CUDA"), if any.
+    /// GPU API compiled in ("Vulkan"), if any.
     pub gpu_backend: Option<&'static str>,
     /// GPU is actually in use for the loaded model (false after a CPU fallback).
     pub gpu_active: bool,

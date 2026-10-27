@@ -19,7 +19,7 @@ path = "src/main.rs"
 [features]
 default = []
 gpu-vulkan = ["whisper-rs/vulkan"]
-gpu-cuda = ["whisper-rs/cuda"]
+
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

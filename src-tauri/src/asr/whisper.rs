@@ -1,5 +1,5 @@
 //! whisper.cpp backend via whisper-rs. CPU always works; when the build has a GPU feature
-//! (`gpu-vulkan` / `gpu-cuda`) and the caller asks for it, the GPU is tried first and a load
+//! (`gpu-vulkan`) and the caller asks for it, the GPU is tried first and a load
 //! failure falls back to CPU instead of leaving the user without dictation.
 
 use std::path::{Path, PathBuf};
@@ -8,14 +8,13 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 use super::{join_segments, AsrError, CancelToken, Capabilities, LoadOptions, SpeechBackend, Transcription};
 
-pub const GPU_COMPILED: bool = cfg!(any(feature = "gpu-vulkan", feature = "gpu-cuda"));
-pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "gpu-cuda") {
-    Some("CUDA")
-} else if cfg!(feature = "gpu-vulkan") {
+pub const GPU_COMPILED: bool = cfg!(feature = "gpu-vulkan");
+pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "gpu-vulkan") {
     Some("Vulkan")
 } else {
     None
 };
+
 /// Segments whisper rates above this no-speech probability are discarded.
 const NO_SPEECH_DROP: f32 = 0.6;
 
