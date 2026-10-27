@@ -14,7 +14,17 @@ set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
 if not defined VSDIR (echo Visual Studio C++ tools not found & exit /b 1)
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
-if not defined LIBCLANG_PATH set "LIBCLANG_PATH=%ProgramFiles%\LLVM\bin"
+if not defined LIBCLANG_PATH (
+	if exist "%ProgramFiles%\LLVM\bin\libclang.dll" (
+		set "LIBCLANG_PATH=%ProgramFiles%\LLVM\bin"
+	) else if exist "%VSDIR%\VC\Tools\Llvm\x64\bin\libclang.dll" (
+		set "LIBCLANG_PATH=%VSDIR%\VC\Tools\Llvm\x64\bin"
+	) else if exist "%ProgramFiles(x86)%\LLVM\bin\libclang.dll" (
+		set "LIBCLANG_PATH=%ProgramFiles(x86)%\LLVM\bin"
+	) else (
+		set "LIBCLANG_PATH=%ProgramFiles%\LLVM\bin"
+	)
+)
 if not defined VULKAN_SDK (
 	for /f "delims=" %%i in ('dir /b /ad /o-n "%SystemDrive%\VulkanSDK" 2^>nul') do if not defined VULKAN_SDK set "VULKAN_SDK=%SystemDrive%\VulkanSDK\%%i"
 )

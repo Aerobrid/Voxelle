@@ -25,15 +25,34 @@ Windows, Linux, and macOS. Primary development is on Windows.
   optional with a CPU fallback).
 - Audio: **cpal**. Storage: **SQLite**.
 
-## Build (development)
-Requires Node 20+, the Rust toolchain, and the C++ build tools for your platform
-(on Windows: Visual Studio Build Tools with the C++ workload).
+## For Users
+
+Pre-built desktop installers (`.exe` / `.msi`) will be available on GitHub Releases once packaged.
+1. Download and run the installer.
+2. Launch Voxelle from your Start menu.
+3. Open **Model Manager** to select or verify a local Whisper speech model.
+
+## Build from Source (Developers)
+
+Requires **Node 20+**, the **Rust toolchain** (`x86_64-pc-windows-msvc`), and **Visual Studio Build Tools with C++ workload** (including MSVC and Ninja).
 
 ```bash
+# 1. Install frontend dependencies
 npm install
-npm run build      # type-check + build the web UI
-npm test           # run UI unit tests
-npm run tauri dev  # run the desktop app (requires the Rust toolchain + C++ build tools)
+
+# 2. Run unit tests
+npm test                                                                  # Frontend tests (Vitest)
+scripts\win-env.cmd cargo test --manifest-path src-tauri\Cargo.toml --lib # Rust core tests
+
+# 3. Launch desktop app in development
+# On Windows, win-env.cmd auto-detects Ninja, MSVC vcvars64, and Clang paths:
+scripts\win-env.cmd npm run tauri dev
+
+# For GPU acceleration (requires LunarG Vulkan SDK):
+scripts\win-env.cmd npm run tauri dev -- --features gpu-vulkan
+
+# 4. Build standalone production installer for end users
+scripts\win-env.cmd npm run tauri build
 ```
 
 ## License
