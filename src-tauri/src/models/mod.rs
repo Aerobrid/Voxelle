@@ -221,14 +221,16 @@ pub fn describe(
         })
         .chain(user_models(dir).into_iter().map(|u| {
             let f = facts(&u.id);
+            let header = inspect_ggml_header(&u.path, u.size_bytes);
+            let lang = if header.multilingual { "multilingual" } else { "en" };
             ModelInfo {
                 name: u.file_name.trim_end_matches(".bin").to_string(),
                 purpose: "speech".into(),
                 locality: "local".into(),
                 size_bytes: u.size_bytes,
-                memory_mb: 0,
-                languages: Vec::new(),
-                license: "Unknown (your file)".into(),
+                memory_mb: header.memory_mb,
+                languages: vec![lang.into()],
+                license: "Custom (user-imported)".into(),
                 source: "Added to the model folder by you".into(),
                 sha256: String::new(),
                 installed: true,
@@ -242,6 +244,74 @@ pub fn describe(
             }
         }))
         .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GgmlHeaderInfo {
+    pub multilingual: bool,
+    pub quantization: Option<String>,
+    pub memory_mb: u32,
+}
+
+/// Extract details directly from a whisper.cpp GGML model file header (first 48 bytes).
+pub fn inspect_ggml_header(path: &Path, file_size: u64) -> GgmlHeaderInfo {
+    let is_en_in_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_ascii_lowercase().contains(".en"))
+        .unwrap_or(false);
+
+    let est_memory = ((file_size as f64 / (1024.0 * 1024.0)) * 1.5).round().max(50.0) as u32;
+
+    let Ok(mut f) = File::open(path) else {
+        return GgmlHeaderInfo {
+            multilingual: !is_en_in_name,
+            quantization: None,
+            memory_mb: est_memory,
+        };
+    };
+
+    let mut buf = [0u8; 48];
+    if f.read_exact(&mut buf).is_err() || u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) != 0x6767_6d6c {
+        return GgmlHeaderInfo {
+            multilingual: !is_en_in_name,
+            quantization: None,
+            memory_mb: est_memory,
+        };
+    }
+
+    let n_vocab = i32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    let ftype = i32::from_le_bytes([buf[44], buf[45], buf[46], buf[47]]);
+
+    let quant = match ftype {
+        0 => Some("F32".into()),
+        1 => Some("F16".into()),
+        2 => Some("Q4_0".into()),
+        3 => Some("Q4_1".into()),
+        7 => Some("Q8_0".into()),
+        8 => Some("Q5_0".into()),
+        9 => Some("Q5_1".into()),
+        10 => Some("Q2_K".into()),
+        11 => Some("Q3_K".into()),
+        12 => Some("Q4_K".into()),
+        13 => Some("Q5_K".into()),
+        14 => Some("Q6_K".into()),
+        _ => None,
+    };
+
+    let multilingual = if n_vocab == 51864 {
+        false
+    } else if n_vocab >= 51865 {
+        true
+    } else {
+        !is_en_in_name
+    };
+
+    GgmlHeaderInfo {
+        multilingual,
+        quantization: quant,
+        memory_mb: est_memory,
+    }
 }
 
 pub fn sha256_file(path: &Path) -> std::io::Result<String> {

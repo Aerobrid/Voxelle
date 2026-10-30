@@ -28,10 +28,17 @@ function formatModelMarkdown(m: ModelInfo): string {
   if (m.languages.length > 0) {
     lines.push(`Language:    ${m.languages.join(", ")}`);
   }
+  if (m.measuredRtf != null) {
+    lines.push(`Benchmark:   ${speedText(m.measuredRtf)} (${m.measuredBackend ?? "CPU"})`);
+  }
   if (m.userAdded) {
     lines.push(`Format:      whisper.cpp GGML (.bin)`);
+    lines.push(`Source:      Custom (user-imported file)`);
   } else {
     lines.push(`License:     ${m.license}`);
+    if (m.sha256) {
+      lines.push(`SHA-256:     ${m.sha256}`);
+    }
   }
   lines.push(`Execution:   Local (runs fully offline)`);
   if (m.path) {
