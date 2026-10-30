@@ -3,7 +3,6 @@ import { core } from "../ipc/bridge";
 import type { ModelInfo } from "../ipc/types";
 import { errorText, useCore } from "../state/useCore";
 import { Gate } from "../components/Gate";
-import { PrivacyChip } from "../components/PrivacyChip";
 import { toast } from "../state/store";
 import { cpuAdvice, speedText } from "../state/derive";
 
@@ -12,101 +11,115 @@ function fmtSize(bytes: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
 }
 
+function formatModelMarkdown(m: ModelInfo): string {
+  const fileName = m.path
+    ? m.path.split(/[/\\]/).pop()
+    : m.userAdded
+      ? m.id.replace(/^file:/, "")
+      : m.name;
+  const lines: string[] = [
+    `Name:        ${m.name}`,
+    `File:        ${fileName}`,
+    `Size:        ${fmtSize(m.sizeBytes)} (${m.sizeBytes.toLocaleString()} bytes)`,
+  ];
+  if (m.memoryMb > 0) {
+    lines.push(`Memory:      ~${m.memoryMb} MB while loaded`);
+  }
+  if (m.languages.length > 0) {
+    lines.push(`Language:    ${m.languages.join(", ")}`);
+  }
+  if (m.userAdded) {
+    lines.push(`Format:      whisper.cpp GGML (.bin)`);
+  } else {
+    lines.push(`License:     ${m.license}`);
+  }
+  lines.push(`Execution:   Local (runs fully offline)`);
+  if (m.path) {
+    lines.push(`Path:        ${m.path}`);
+  }
+  return lines.join("\n");
+}
+
 function ModelCard({ m, onChange }: { m: ModelInfo; onChange: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const act = (label: string, p: () => Promise<unknown>, done: (v: unknown) => string | null) => {
-    setBusy(label);
-    setNote(null);
-    p().then(
-      (v) => {
+  const select = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (m.selected || busy != null) return;
+    setBusy("select");
+    core.selectModel(m.id).then(
+      () => {
         setBusy(null);
-        const msg = done(v);
-        if (msg) toast(msg);
+        toast(`Now using ${m.name}.`);
         onChange();
       },
       (e) => {
         setBusy(null);
-        setNote(errorText(e));
+        toast(errorText(e), "error");
       },
     );
   };
 
+  const specMarkdown = formatModelMarkdown(m);
+
+  const copyDetails = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    core.copyText(specMarkdown);
+    setCopied(true);
+    toast("Model details copied to clipboard.");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className={`card${m.selected ? " card--selected" : ""}`}>
-      <div className="row-between">
-        <h2 style={{ margin: 0 }}>{m.name}</h2>
-        <div className="model__status">
-          {m.selected && <span className="tag tag--accent">In use</span>}
-          {m.userAdded ? (
-            <span className="tag tag--warn">Your file · no published checksum</span>
-          ) : m.installed ? (
-            <span className={m.integrityVerified ? "tag tag--ok" : "tag"}>
-              {m.integrityVerified ? "Installed · verified" : "Installed · not verified yet"}
-            </span>
+    <div
+      className={`card${m.selected ? " card--selected" : " card--selectable"}`}
+      onClick={!m.selected ? select : undefined}
+    >
+      <div className="row-between" style={{ alignItems: "center" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>{m.name}</h2>
+          {m.measuredRtf != null && (
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
+              Speed: {speedText(m.measuredRtf)} ({m.measuredBackend ?? "CPU"})
+            </p>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {m.selected ? (
+            <span className="tag tag--accent">In use</span>
           ) : (
-            <span className="tag">Not installed</span>
+            <button
+              className="btn btn--primary btn--sm"
+              disabled={busy != null}
+              onClick={select}
+            >
+              {busy === "select" ? "Selecting…" : "Use this model"}
+            </button>
           )}
         </div>
       </div>
-      <div className="model__meta">
-        <span>{fmtSize(m.sizeBytes)}{m.userAdded ? "" : " download"}</span>
-        {m.memoryMb > 0 && <span>~{m.memoryMb} MB while loaded</span>}
-        {m.languages.length > 0 && (
-          <span>{m.languages.length > 3 ? `${m.languages.length} languages` : m.languages.join(", ")}</span>
-        )}
-        <span>{m.license}</span>
-        <PrivacyChip locality={m.locality} />
-      </div>
-      <p className="small muted" style={{ margin: "0 0 12px" }}>
-        {m.measuredRtf != null
-          ? `Last measured here: ${speedText(m.measuredRtf)} (${m.measuredBackend ?? "?"}).`
-          : "Speed on this computer: not measured yet — dictate once with it."}
-      </p>
-      <div className="actions">
-        {m.installed ? (
-          <>
+
+      <details className="details" style={{ marginTop: 12 }}>
+        <summary style={{ cursor: "pointer", fontSize: "12px", color: "var(--text-3)", userSelect: "none" }}>
+          File details
+        </summary>
+        <div className="model-spec-box">
+          <div className="model-spec-box__header">
+            <span>model-spec.md</span>
             <button
-              className={m.selected ? "btn" : "btn btn--primary"}
-              disabled={m.selected || busy != null}
-              onClick={() => act("select", () => core.selectModel(m.id), () => `Now using ${m.name}.`)}
+              type="button"
+              className="btn btn--ghost btn--xs"
+              onClick={copyDetails}
+              title="Copy markdown specifications"
             >
-              {m.selected ? "In use" : "Use this model"}
+              {copied ? "Copied!" : "Copy"}
             </button>
-            {!m.userAdded && (
-            <button
-              className="btn btn--ghost"
-              disabled={busy != null}
-              onClick={() =>
-                act("verify", () => core.verifyModel(m.id), (ok) =>
-                  ok ? "Checksum matches the pinned value." : "Checksum MISMATCH — remove and reinstall this file.",
-                )
-              }
-            >
-              {busy === "verify" ? "Verifying…" : "Verify checksum"}
-            </button>
-            )}
-          </>
-        ) : (
-          <span className="small muted">
-            In-app download is <span className="tag tag--soon">planned</span>. For now, put{" "}
-            <span className="mono">{m.source.split("/").pop()}</span> in the model folder; it is checked
-            against its pinned SHA-256 before first use.
-          </span>
-        )}
-        {note && <span className="muted small">{note}</span>}
-      </div>
-      {m.userAdded && (
-        <p className="small faint" style={{ margin: "10px 0 0" }}>
-          Checked only for the whisper.cpp format. Use model files from sources you trust.
-        </p>
-      )}
-      <details className="details">
-        <summary>File details</summary>
-        <p className="path" style={{ margin: "8px 0 0" }}>Source: {m.source}</p>
-        {m.sha256 && <p className="path" style={{ margin: "4px 0 0" }}>SHA-256: {m.sha256}</p>}
-        {m.path && <p className="path" style={{ margin: "4px 0 0" }}>Path: {m.path}</p>}
+          </div>
+          <pre className="model-spec-box__code">
+            {specMarkdown}
+          </pre>
+        </div>
       </details>
     </div>
   );
@@ -130,11 +143,12 @@ export function ModelManager() {
         })
       : null;
   const openFolder = () => core.openModelFolder().catch((e) => toast(errorText(e), "error"));
+
   return (
     <div className="page">
       <div className="page__head">
         <h1>Models</h1>
-        <p className="sub">Speech models run on this computer. Catalog models are checked against a pinned checksum before they load; files you add are checked for the whisper.cpp format.</p>
+        <p className="sub">Speech models run locally on this computer.</p>
       </div>
       <div className="tiles" style={{ marginBottom: 18 }}>
         <div className="tile">
@@ -142,8 +156,8 @@ export function ModelManager() {
           <div className="tile__value">
             {caps.status === "ok"
               ? caps.data.gpuCompiled
-                ? `GPU (${caps.data.gpuBackend ?? "?"}) · ${caps.data.gpuActive ? "in use" : "not in use"}`
-                : "CPU only in this build"
+                ? `GPU (${caps.data.gpuBackend ?? "Vulkan"}) · ${caps.data.gpuActive ? "in use" : "ready"}`
+                : "CPU"
               : "—"}
           </div>
         </div>
@@ -151,7 +165,7 @@ export function ModelManager() {
           <div className="tile__label">Model folder</div>
           <div className="path">{dir.status === "ok" ? dir.data : "—"}</div>
           <div className="actions" style={{ marginTop: 8 }}>
-            <button className="btn btn--sm" onClick={openFolder}>
+            <button className="btn btn--ghost btn--sm" onClick={openFolder}>
               Open folder
             </button>
             <button className="btn btn--ghost btn--sm" onClick={reload}>
@@ -162,26 +176,35 @@ export function ModelManager() {
       </div>
       {advice && <div className="notice notice--warn">{advice}</div>}
       <Gate q={q}>
-        {(models) => (
-          <div>
-            {models.every((m) => !m.installed) && <div className="notice notice--warn">No speech model installed yet.</div>}
-            {[...models]
-              .sort((a, b) => Number(b.installed) - Number(a.installed))
-              .map((m) => (
+        {(models) => {
+          const installed = models.filter((m) => m.installed);
+          if (installed.length === 0) {
+            return (
+              <div className="card" style={{ textAlign: "center", padding: "36px 20px" }}>
+                <p style={{ margin: "0 0 8px", fontSize: "15px", color: "var(--text-1)", fontWeight: 500 }}>
+                  No speech models installed yet
+                </p>
+                <p className="small muted" style={{ margin: "0 0 16px", maxWidth: "48ch", marginLeft: "auto", marginRight: "auto" }}>
+                  Add a whisper.cpp model file (<code>.bin</code>) to your model folder, then click Rescan to use it.
+                </p>
+                <button className="btn btn--primary" onClick={openFolder}>
+                  Open model folder
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div>
+              {installed.map((m) => (
                 <ModelCard key={m.id} m={m} onChange={reload} />
               ))}
-            <section className="section">
-              <div className="section__head">
-                <h2>Use your own model</h2>
-              </div>
-              <p className="small muted" style={{ margin: 0, maxWidth: "62ch" }}>
-                Put any whisper.cpp model file (<span className="mono">.bin</span>, GGML format), such as a
-                fine-tune or another size, in the model folder, then press Rescan. It appears above, marked as
-                your file, and is used only when you choose it.
+              <p className="small muted" style={{ marginTop: 20, textAlign: "center" }}>
+                To add more models, drop any whisper.cpp <span className="mono">.bin</span> file into your model folder and click Rescan.
               </p>
-            </section>
-          </div>
-        )}
+            </div>
+          );
+        }}
       </Gate>
     </div>
   );

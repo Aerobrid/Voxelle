@@ -357,15 +357,27 @@ h2 {
   border: 1px solid var(--line);
   border-radius: var(--r-card);
   padding: 18px 20px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 
 .card + .card {
   margin-top: 10px;
 }
 
+.card--selectable {
+  cursor: pointer;
+}
+
+.card--selectable:hover,
+.card:not(.card--selected):hover {
+  border-color: rgba(91, 140, 255, 0.5);
+  box-shadow: 0 0 16px rgba(91, 140, 255, 0.12);
+}
+
 .card--selected {
   border-color: rgba(91, 140, 255, 0.45);
   background: linear-gradient(0deg, rgba(91, 140, 255, 0.06), rgba(91, 140, 255, 0.06)), var(--surface);
+  cursor: default;
 }
 
 .notice {
@@ -1506,4 +1518,41 @@ details.details[open] summary::before {
 
 .keyfield {
   min-width: 170px;
+}
+
+.btn--xs {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.model-spec-box {
+  margin-top: 10px;
+  background: #090c16;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  overflow: hidden;
+  user-select: text;
+}
+
+.model-spec-box__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #060810;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--mono);
+}
+
+.model-spec-box__code {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-1);
+  white-space: pre;
+  overflow-x: auto;
 }
