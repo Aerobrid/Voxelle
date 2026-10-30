@@ -1527,8 +1527,8 @@ details.details[open] summary::before {
 
 .model-spec-box {
   margin-top: 10px;
-  background: #090c16;
-  border: 1px solid var(--line-strong);
+  background: #171b29;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--r-control);
   overflow: hidden;
   user-select: text;
@@ -1539,10 +1539,10 @@ details.details[open] summary::before {
   justify-content: space-between;
   align-items: center;
   padding: 6px 12px;
-  background: #060810;
-  border-bottom: 1px solid var(--line);
+  background: #1f2538;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-family: var(--mono);
 }
 
