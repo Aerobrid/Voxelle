@@ -12,7 +12,6 @@ export type SectionId =
   | "audio-import"
   | "models"
   | "settings"
-  | "privacy";
 
 export interface NavItem {
   id: SectionId;
@@ -27,7 +26,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "stats", label: "Stats", planned: false },
   { id: "models", label: "Models", planned: false },
   { id: "settings", label: "Settings", planned: false },
-  { id: "privacy", label: "Privacy", planned: false },
   { id: "vocabulary", label: "Vocabulary Coach", planned: true },
   { id: "assistant", label: "AI Assistant", planned: true },
   { id: "notes", label: "Notes", planned: true },

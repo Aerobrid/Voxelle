@@ -7,7 +7,6 @@ import { Dashboard } from "./sections/Dashboard";
 import { History } from "./sections/History";
 import { ModelManager } from "./sections/ModelManager";
 import { Settings } from "./sections/Settings";
-import { Privacy } from "./sections/Privacy";
 import { Stats } from "./sections/Stats";
 import { Toasts } from "./components/Toasts";
 import { Planned } from "./sections/Planned";
@@ -48,7 +47,6 @@ export default function App() {
         {section === "stats" && <Stats />}
         {section === "models" && <ModelManager />}
         {section === "settings" && <Settings />}
-        {section === "privacy" && <Privacy />}
         {section === "vocabulary" && <Planned title="Vocabulary Coach" note={PLANNED_NOTES.vocabulary} />}
         {section === "assistant" && <Planned title="AI Assistant" note={PLANNED_NOTES.assistant} />}
         {section === "notes" && <Planned title="Notes" note={PLANNED_NOTES.notes} />}

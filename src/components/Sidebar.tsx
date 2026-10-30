@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { NAV_ITEMS, useAppStore, type SectionId } from "../state/store";
-import { IconChevron, IconHistory, IconHome, IconModels, IconPrivacy, IconSettings, IconStats } from "./Icons";
+import { IconChevron, IconHistory, IconHome, IconModels, IconSettings, IconStats } from "./Icons";
 import { PrivacyChip } from "./PrivacyChip";
 
 const ICONS: Partial<Record<SectionId, ReactNode>> = {
@@ -9,7 +9,6 @@ const ICONS: Partial<Record<SectionId, ReactNode>> = {
   stats: <IconStats />,
   models: <IconModels />,
   settings: <IconSettings />,
-  privacy: <IconPrivacy />,
 };
 
 export function Sidebar() {

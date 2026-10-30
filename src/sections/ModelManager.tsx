@@ -40,7 +40,6 @@ function formatModelMarkdown(m: ModelInfo): string {
       lines.push(`SHA-256:     ${m.sha256}`);
     }
   }
-  lines.push(`Execution:   Local (runs fully offline)`);
   if (m.path) {
     lines.push(`Path:        ${m.path}`);
   }
